@@ -13,3 +13,9 @@ class ContrastiveLoss(nn.Module):
         loss = (label) * torch.pow(dist, 2) + \
                (1 - label) * torch.pow(torch.clamp(self.margin - dist, min=0.0), 2)
         return loss.mean()
+
+# TripletLoss
+triplet_loss_fn = nn.TripletMarginLoss(margin=1.0)
+
+# BCE Loss
+bce_loss_fn = nn.BCELoss()
