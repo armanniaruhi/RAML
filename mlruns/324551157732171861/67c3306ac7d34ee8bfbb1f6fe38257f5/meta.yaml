@@ -1,0 +1,15 @@
+artifact_uri: file:///home/arman/PycharmProjects/RAML/mlruns/324551157732171861/67c3306ac7d34ee8bfbb1f6fe38257f5/artifacts
+end_time: 1746738649452
+entry_point_name: ''
+experiment_id: '324551157732171861'
+lifecycle_stage: active
+run_id: 67c3306ac7d34ee8bfbb1f6fe38257f5
+run_name: nimble-auk-142
+run_uuid: 67c3306ac7d34ee8bfbb1f6fe38257f5
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1746738556018
+status: 3
+tags: []
+user_id: arman
