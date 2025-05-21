@@ -1,0 +1,15 @@
+artifact_uri: file:///home/arman/PycharmProjects/RAML/mlruns/894897162547155013/6fedf085aef3471e97c8dadbd220189e/artifacts
+end_time: 1747031840423
+entry_point_name: ''
+experiment_id: '894897162547155013'
+lifecycle_stage: active
+run_id: 6fedf085aef3471e97c8dadbd220189e
+run_name: spiffy-robin-200
+run_uuid: 6fedf085aef3471e97c8dadbd220189e
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1747031840326
+status: 4
+tags: []
+user_id: arman
