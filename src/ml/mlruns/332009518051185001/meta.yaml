@@ -1,0 +1,6 @@
+artifact_location: file:///home/arman/PycharmProjects/RAML/src/ml/mlruns/332009518051185001
+creation_time: 1747948466064
+experiment_id: '332009518051185001'
+last_update_time: 1747948466064
+lifecycle_stage: active
+name: SiameseResNet
