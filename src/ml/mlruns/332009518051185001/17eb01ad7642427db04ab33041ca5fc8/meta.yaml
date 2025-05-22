@@ -1,0 +1,15 @@
+artifact_uri: file:///home/arman/PycharmProjects/RAML/src/ml/mlruns/332009518051185001/17eb01ad7642427db04ab33041ca5fc8/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '332009518051185001'
+lifecycle_stage: active
+run_id: 17eb01ad7642427db04ab33041ca5fc8
+run_name: upbeat-doe-487
+run_uuid: 17eb01ad7642427db04ab33041ca5fc8
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1747948466708
+status: 1
+tags: []
+user_id: arman
