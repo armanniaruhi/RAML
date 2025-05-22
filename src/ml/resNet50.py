@@ -49,7 +49,10 @@ class SiameseResNet(nn.Module):
         self.resnet = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         # Remove the final fully connected layer
         self.resnet = nn.Sequential(*list(self.resnet.children())[:-1])
-        
+        # Freeze all ResNet layers
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+
         # Add a fully connected layer for the final embedding
         self.fc = nn.Sequential(
             nn.Linear(2048, 512),
@@ -117,12 +120,13 @@ class SiameseResNet(nn.Module):
                           If False, only computes metrics without storing.
         """
         if training_mode:
+            # Set relative path for local MLflow tracking directory
+            mlflow.set_tracking_uri("file:./../../mlruns")
             mlflow.set_experiment(experiment_name)
-            mlflow.start_run()
-            mlflow.log_param("learning_rate", learning_rate)
-            mlflow.log_param("num_epochs", num_epochs)
-            mlflow.log_param("hidden_dim", self.fc[0].out_features)
-            mlflow.log_param("embedding_dim", self.fc[2].out_features)
+            # Start logging
+            with mlflow.start_run():
+                mlflow.log_param("learning_rate", learning_rate)
+                mlflow.log_param("num_epochs", num_epochs)
 
         self.to(device)
         if criterion is None:
@@ -486,6 +490,7 @@ training_results = model.train_model_constructive(
     learning_rate=0.001,
     num_epochs=5,
     device=device,
+    experiment_name='test',
     training_mode=True
 )
 
