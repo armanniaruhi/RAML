@@ -1,1 +1,6 @@
+# Ignored formats
 *.pyc
+
+# Ignored directories
+/data/
+
