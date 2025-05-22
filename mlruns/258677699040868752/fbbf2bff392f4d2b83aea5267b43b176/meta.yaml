@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/soroureskandari/PycharmProjects/RAML/newRAML/src/ml/../../mlruns/258677699040868752/fbbf2bff392f4d2b83aea5267b43b176/artifacts
+end_time: 1747949729699
+entry_point_name: ''
+experiment_id: '258677699040868752'
+lifecycle_stage: active
+run_id: fbbf2bff392f4d2b83aea5267b43b176
+run_name: unequaled-whale-146
+run_uuid: fbbf2bff392f4d2b83aea5267b43b176
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1747949729692
+status: 3
+tags: []
+user_id: soroureskandari
