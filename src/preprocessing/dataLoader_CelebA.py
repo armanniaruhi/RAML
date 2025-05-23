@@ -1,52 +1,42 @@
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from torch.utils.data import DataLoader
 import numpy as np
-from PIL import Image
 import matplotlib.pyplot as plt
+from torchvision import datasets
 
+# https://www.kaggle.com/datasets/kushsheth/face-vae/data
 
-# Fixed Synthetic Dataset Class
-class SyntheticSiameseDataset(Dataset):
-    def __init__(self, num_samples=1000, img_size=(3, 224, 224)):
-        self.num_samples = num_samples
-        self.img_size = img_size
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-        ])
+IMG_SIZE = 64
+BATCH_SIZE = 128
 
-        # Generate reproducible random pairs
-        np.random.seed(42)
-        self.pairs = []
-        for _ in range(num_samples):
-            if np.random.rand() > 0.5:
-                # Similar pair (same class)
-                base_img = np.random.rand(*img_size).astype(np.float32)
-                img1 = base_img * 255
-                img2 = (base_img + np.random.normal(0, 0.1, size=img_size).astype(np.float32)) * 255
-                label = 1.0
-            else:
-                # Dissimilar pair (different class)
-                img1 = np.random.rand(*img_size).astype(np.float32) * 255
-                img2 = np.random.rand(*img_size).astype(np.float32) * 255
-                label = -1.0
-            self.pairs.append((img1, img2, label))
+def load_transformed_dataset():
+    data_transforms = [
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(), # Scales data into [0,1]
+        transforms.Lambda(lambda t: (t * 2) - 1) # Scale between [-1, 1]
+    ]
+    data_transform = transforms.Compose(data_transforms)
+    # train=datasets.ImageFolder(root="/kaggle/input/imagenet-train-subset-100k/imagenet_subtrain", transform=data_transform)
+    train=datasets.ImageFolder(root="../data/img_align_celeba", transform=data_transform)
+    # train = datasets.OxfordIIITPet(root='./data', split="test", download=True, transform=data_transform)
 
-    def __len__(self):
-        return self.num_samples
+    # test = datasets.OxfordIIITPet(root='./data', split="test", download=True, transform=data_transform)
+    # return torch.utils.data.ConcatDataset([train, test])
+    return train
+def show_tensor_image(image):
+    reverse_transforms = transforms.Compose([
+        transforms.Lambda(lambda t: (t + 1) / 2),
+        transforms.Lambda(lambda t: t.permute(1, 2, 0)), # CHW to HWC
+        transforms.Lambda(lambda t: t * 255.),
+        transforms.Lambda(lambda t: t.numpy().astype(np.uint8)),
+        transforms.ToPILImage(),
+    ])
 
-    def __getitem__(self, idx):
-        img1, img2, label = self.pairs[idx]
+    # Take first image of batch
+    if len(image.shape) == 4:
+        image = image[0, :, :, :]
+    plt.imshow(reverse_transforms(image))
 
-        # Convert to PIL Images first
-        img1_pil = Image.fromarray(img1.transpose(1, 2, 0).astype('uint8'))
-        img2_pil = Image.fromarray(img2.transpose(1, 2, 0).astype('uint8'))
-
-        return (
-            self.transform(img1_pil),
-            self.transform(img2_pil),
-            torch.tensor(label, dtype=torch.float32)
-        )
+data = load_transformed_dataset()
+dataloader = DataLoader(data, batch_size=BATCH_SIZE, shuffle=True, drop_last=True,num_workers=4)
