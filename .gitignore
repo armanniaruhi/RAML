@@ -1,6 +1,10 @@
 # Ignored formats
 *.pyc
+*.gitignore
+*.db
 
 # Ignored directories
 /data/
+
+
 

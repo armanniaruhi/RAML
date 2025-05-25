@@ -161,10 +161,11 @@ class SiameseResNet(nn.Module):
                 train_n_batches += 1
 
                 # Log training progress
-                if i % 10 == 0:
+                if i % 5 == 0:
                     train_loss_history.append(loss_contrastive.item())
+                    print(f"Epoch {epoch} - Iteration {i} - Training Loss: {loss_contrastive.item():.4f}")
 
-            # Calculate average training loss for the epoch
+            # Calculate average training loss for the epochs
             avg_train_loss = train_loss / train_n_batches
 
             # Validation phase
