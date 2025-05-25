@@ -2,6 +2,7 @@ import torch
 
 class EarlyStopping:
     def __init__(self, patience=7, min_delta=0, verbose=True):
+        self.best_model_state = None
         self.patience = patience
         self.min_delta = min_delta
         self.verbose = verbose
