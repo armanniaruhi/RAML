@@ -54,41 +54,39 @@ class SiameseResNet(nn.Module):
         for param in self.resnet.parameters():
             param.requires_grad = False
 
-        self.cnn = nn.Sequential(
-            # Input: 3x224x224
-            nn.Conv2d(3, 32, kernel_size=5, padding=2),  # 32x224x224
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 32x112x112
-
-            nn.Conv2d(32, 64, kernel_size=5, padding=2),  # 64x112x112
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 64x56x56
-
-            # Additional layers to properly downsample 224x224
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),  # 128x56x56
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 128x28x28
-
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),  # 256x28x28
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2)  # 256x14x14
-        )
-
-        # Adjusted for the final spatial size of 14x14 with 256 channels
-        self.fc1 = nn.Sequential(
-            nn.Linear(256 * 14 * 14, 1024),
-            nn.ReLU(inplace=True),
-            nn.Linear(1024, 512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, 256),
-            nn.ReLU(inplace=True),
-            nn.Linear(256, 128)
-        )
+        self.cnn1 = nn.Conv2d(3, 256, kernel_size=11, stride=4)
+        self.relu = nn.ReLU()
+        self.maxpool1 = nn.MaxPool2d(3, stride=2)
+        self.cnn2 = nn.Conv2d(256, 256, kernel_size=5, stride=1)
+        self.maxpool2 = nn.MaxPool2d(2, stride=2)
+        self.cnn3 = nn.Conv2d(256, 384, kernel_size=3, stride=1)
+        self.fc1 = nn.Linear(46464, 1024)
+        self.fc2 = nn.Linear(1024, 256)
+        self.fc3 = nn.Linear(256, 1)
 
     def forward_one(self, x):
-        output = self.cnn(x)
-        output = output.view(output.size(0), -1)
+        output = self.cnn1(x)
+        # print(output.shape)
+        output = self.relu(output)
+        # print(output.shape)
+        output = self.maxpool1(output)
+        # print(output.shape)
+        output = self.cnn2(output)
+        # print(output.shape)
+        output = self.relu(output)
+        # print(output.shape)
+        output = self.maxpool2(output)
+        # print(output.shape)
+        output = self.cnn3(output)
+        output = self.relu(output)
+        # print(output.shape)
+        output = output.view(output.size()[0], -1)
+        # print(output.shape)
         output = self.fc1(output)
+        # print(output.shape)
+        output = self.fc2(output)
+        # print(output.shape)
+        output = self.fc3(output)
         return output
     
     def forward(self, input1, input2):
@@ -204,6 +202,7 @@ class SiameseResNet(nn.Module):
                 output1, output2 = self(img1, img2)
                 loss = criterion(output1, output2, label)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
 
                 train_loss += loss.item()
@@ -213,7 +212,7 @@ class SiameseResNet(nn.Module):
                     epoch_train_embeddings2.append(output2.detach().cpu())
                     epoch_train_labels.append(label.detach().cpu())
 
-                pbar.set_postfix({'loss': train_loss / len(pbar)})
+            pbar.set_postfix({'loss': train_loss})
 
             # Compute training metrics
             train_embeddings1 = torch.cat(epoch_train_embeddings1).to(device) if not tuning_mode else None
@@ -274,7 +273,7 @@ class SiameseResNet(nn.Module):
                     for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']:
                         mlflow.log_metric(f"val_{metric}", val_results['metrics'][metric], step=epoch)
 
-                    # Save best model
+                    # Save the best model
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
                         mlflow.pytorch.log_model(self, "best_model")
@@ -284,7 +283,7 @@ class SiameseResNet(nn.Module):
                     early_stopping(val_loss, self)
                     if early_stopping.early_stop:
                         print(f"Early stopping triggered at epoch {epoch + 1}")
-                        # Load best model
+                        # Load the best model
                         self.load_state_dict(torch.load('best_model.pth'))
                         break
 
@@ -327,7 +326,7 @@ class SiameseResNet(nn.Module):
     def evaluate(self,
                  loader: torch.utils.data.DataLoader,
                  criterion: nn.Module,
-                 device: str = 'cuda',
+                 device: torch.device = 'cuda',
                  store_embeddings: bool = True) -> Dict:
         """Evaluate the model with optional embedding storage"""
         self.eval()
