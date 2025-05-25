@@ -3,7 +3,7 @@ import os
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-import matplotlib.pyplot as plt
+from torch.utils.data import Subset
 import random
 import torch
 
@@ -169,3 +169,24 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
+
+def create_subset_loader(original_loader, num_samples=1000):
+    """Create a subset data loader from the original loader"""
+    # Get the original dataset
+    original_dataset = original_loader.dataset
+
+    # Create indices for the subset
+    subset_indices = torch.randperm(len(original_dataset))[:num_samples]
+
+    # Create subset dataset
+    subset_dataset = Subset(original_dataset, subset_indices)
+
+    # Create new loader with same parameters but subset dataset
+    subset_loader = torch.utils.data.DataLoader(
+        subset_dataset,
+        batch_size=original_loader.batch_size,
+        shuffle=True,  # Typically want to shuffle for training
+        num_workers=original_loader.num_workers,
+        pin_memory=original_loader.pin_memory
+    )
+    return subset_loader
