@@ -6,20 +6,29 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import random
 import torch
-# "test"
 
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, img_size=64, transform=None):
+    def __init__(self, image_dir, label_file, img_size=64, transform=None, partition_file=None, partition_id=None):
         """
         Args:
             image_dir (str): Path to the directory containing images.
             label_file (str): Path to the .txt file with image labels.
             img_size (int): Resize all images to this size.
             transform (callable, optional): Optional transforms to apply to images.
+            partition_file (str, optional): Path to the partition file for train/val/test split.
+            partition_id (int, optional): Partition ID to use (0=train, 1=val, 2=test).
         """
         self.image_dir = image_dir
         self.label_map = self._load_labels(label_file)
-        self.image_files = [f for f in os.listdir(image_dir) if f in self.label_map]
+        
+        # Load partition information if provided
+        if partition_file and partition_id is not None:
+            partition_map = self._load_partitions(partition_file)
+            self.image_files = [f for f in os.listdir(image_dir) 
+                              if f in self.label_map and f in partition_map 
+                              and partition_map[f] == partition_id]
+        else:
+            self.image_files = [f for f in os.listdir(image_dir) if f in self.label_map]
 
         # Group images by label
         self.label_to_images = {}
@@ -34,11 +43,10 @@ class CelebALabeledDataset(Dataset):
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                                     std=[0.5, 0.5, 0.5])
+                                  std=[0.5, 0.5, 0.5])
             ])
         else:
             self.transform = transform
-
 
     def _load_labels(self, label_file):
         label_map = {}
@@ -49,6 +57,19 @@ class CelebALabeledDataset(Dataset):
                     filename, label = parts
                     label_map[filename] = int(label)
         return label_map
+
+    def _load_partitions(self, partition_file):
+        partition_map = {}
+        with open(partition_file, 'r') as f:
+            # Skip header if it exists
+            if 'csv' in partition_file.lower():
+                next(f, None)
+            for line in f:
+                parts = line.strip().split(',')
+                if len(parts) == 2:
+                    filename, partition = parts
+                    partition_map[filename] = int(partition)
+        return partition_map
 
     def __len__(self):
         return len(self.image_files)
@@ -69,16 +90,29 @@ class CelebALabeledDataset(Dataset):
         should_get_same_class = random.randint(0, 1)
 
         if should_get_same_class:
-            # Get another image from the same class
+            # Get another image from the same class, excluding the anchor itself
             positive_files = self.label_to_images[anchor_label]
-            second_filename = random.choice([f for f in positive_files if f != anchor_filename])
-            target = 1
-        else:
+            same_class_files = [f for f in positive_files if f != anchor_filename]
+
+            if same_class_files:
+                second_filename = random.choice(same_class_files)
+            else:
+                # Fallback: force a different class instead
+                should_get_same_class = False  # fallback to negative
+                other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
+                other_label = random.choice(other_labels)
+                second_filename = random.choice(self.label_to_images[other_label])
+                target = 0
+
+        if not should_get_same_class:
             # Get an image from a different class
             other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
             other_label = random.choice(other_labels)
             second_filename = random.choice(self.label_to_images[other_label])
             target = 0
+
+        else:
+            target = 1
 
         second_img = Image.open(os.path.join(self.image_dir, second_filename)).convert('RGB')
 
@@ -88,7 +122,6 @@ class CelebALabeledDataset(Dataset):
             second_img = self.transform(second_img)
 
         return anchor_img, second_img, torch.FloatTensor([target])
-
 
 def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True):
     """
@@ -106,3 +139,33 @@ def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, sh
     """
     dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+
+def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64):
+    """
+    Creates separate dataloaders for train, validation, and test sets based on partition file.
+
+    Args:
+        image_dir (str): Directory containing the images
+        label_file (str): Path to the label file
+        partition_file (str): Path to the list_eval_partition.csv file
+        batch_size (int): Batch size for the dataloaders
+        img_size (int): Size to resize the images to
+
+    Returns:
+        tuple: (train_loader, val_loader, test_loader)
+    """
+    # Create datasets for each partition
+    train_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
+                                       partition_file=partition_file, partition_id=0)
+    val_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
+                                     partition_file=partition_file, partition_id=1)
+    test_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
+                                      partition_file=partition_file, partition_id=2)
+
+    # Create dataloaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
