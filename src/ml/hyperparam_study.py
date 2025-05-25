@@ -10,7 +10,6 @@ def objective(trial, train_loader, val_loader):
     learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
     margin = trial.suggest_float('margin', 0.5, 10.0)
-    patience = trial.suggest_int('patience', 1, 10)
 
     # Initialize model fresh for each trial to avoid parameter leakage
     model = SiameseResNet().to(device)
@@ -27,7 +26,7 @@ def objective(trial, train_loader, val_loader):
         optimizer=optimizer,  # Pass the created optimizer
         num_epochs=5,
         device=device,
-        patience=patience,
+        patience=2,
         experiment_name='SiameseResNet',
         tuning_mode=True
     )
