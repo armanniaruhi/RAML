@@ -16,7 +16,7 @@ def objective(trial, train_loader, val_loader):
     model = SiameseResNet().to(device)
 
     
-    optimizer = torch.optim.Adam(model.parameters(),
+    optimizer = torch.optim.AdamW(model.parameters(),
                                      lr=learning_rate,
                                      weight_decay=weight_decay)
 

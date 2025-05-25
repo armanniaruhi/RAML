@@ -8,6 +8,7 @@ class ContrastiveLoss(nn.Module):
 
     def forward(self, output1, output2, label):
         euclidean_distance = nn.functional.pairwise_distance(output1, output2)
-        loss = torch.mean((1 - label) * torch.pow(euclidean_distance, 2) +
-                          label * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-        return loss
+        loss_positive = (1 - label) * torch.pow(euclidean_distance, 2)
+        loss_negative = label * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2)
+        total_loss = torch.mean(loss_positive + loss_negative)
+        return total_loss
