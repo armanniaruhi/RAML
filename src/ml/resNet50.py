@@ -2,12 +2,13 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
 from tqdm import tqdm
-from torch.optim import Adam
+from torch.optim import AdamW
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                             f1_score, roc_curve, roc_auc_score)
 import mlflow
 import mlflow.pytorch
 from typing import Dict, Optional
+from src.ml.model_utils import EarlyStopping
 
 
 class SiameseResNet(nn.Module):
@@ -53,19 +54,42 @@ class SiameseResNet(nn.Module):
         for param in self.resnet.parameters():
             param.requires_grad = False
 
-        # Add a fully connected layer for the final embedding
-        self.fc = nn.Sequential(
-            nn.Linear(2048, 512),
-            nn.ReLU(),
-            nn.Linear(512, 128)
+        self.cnn = nn.Sequential(
+            # Input: 3x224x224
+            nn.Conv2d(3, 32, kernel_size=5, padding=2),  # 32x224x224
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 32x112x112
+
+            nn.Conv2d(32, 64, kernel_size=5, padding=2),  # 64x112x112
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 64x56x56
+
+            # Additional layers to properly downsample 224x224
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),  # 128x56x56
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # 128x28x28
+
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),  # 256x28x28
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)  # 256x14x14
         )
-        
+
+        # Adjusted for the final spatial size of 14x14 with 256 channels
+        self.fc1 = nn.Sequential(
+            nn.Linear(256 * 14 * 14, 1024),
+            nn.ReLU(inplace=True),
+            nn.Linear(1024, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, 128)
+        )
+
     def forward_one(self, x):
-        # Forward pass for one input
-        x = self.resnet(x)
-        x = x.view(x.size()[0], -1)
-        x = self.fc(x)
-        return x
+        output = self.cnn(x)
+        output = output.view(output.size(0), -1)
+        output = self.fc1(output)
+        return output
     
     def forward(self, input1, input2):
         # Forward pass for both inputs
@@ -109,17 +133,22 @@ class SiameseResNet(nn.Module):
                                  criterion: Optional[nn.Module] = None,
                                  learning_rate: float = 0.001,
                                  num_epochs: int = 10,
-                                 device: str = 'cuda',
+                                 optimizer: Optional[nn.Module] = torch.optim.Adam,
+                                 device: torch.device = 'cuda',
                                  experiment_name: str = 'SiameseResNet',
-                                 training_mode: bool = True) -> Optional[Dict]:
+                                 tuning_mode: bool = True,
+                                 patience: int = 7
+                                 ) -> Optional[Dict]:
         """
         Train or evaluate the model with optional tracking
 
         Args:
-            training_mode: If True, stores metrics, embeddings and logs to MLflow.
+            tuning_mode: If True, stores metrics, embeddings and logs to MLflow.
                           If False, only computes metrics without storing.
+            patience: Number of epochs to wait before early stopping
+
         """
-        if training_mode:
+        if not tuning_mode:
             # Set relative path for local MLflow tracking directory
             mlflow.set_tracking_uri("file:./../../mlruns")
             mlflow.set_experiment(experiment_name)
@@ -127,18 +156,20 @@ class SiameseResNet(nn.Module):
             with mlflow.start_run():
                 mlflow.log_param("learning_rate", learning_rate)
                 mlflow.log_param("num_epochs", num_epochs)
+                mlflow.log_param("patience", patience)
 
         self.to(device)
         if criterion is None:
             criterion = nn.CosineEmbeddingLoss()
-            if training_mode:
+            if not tuning_mode:
                 mlflow.log_param("loss_function", "CosineEmbeddingLoss")
 
-        optimizer = Adam(self.parameters(), lr=learning_rate)
+        # Initialize early stopping
+        early_stopping = EarlyStopping(patience=patience, verbose=True)
 
         # Initialize results storage only if in training mode
         results = None
-        if training_mode:
+        if not tuning_mode:
             results = {
                 'metrics': {
                     'train': {'loss': [], 'accuracy': [], 'precision': [],
@@ -177,7 +208,7 @@ class SiameseResNet(nn.Module):
 
                 train_loss += loss.item()
 
-                if training_mode:
+                if not tuning_mode:
                     epoch_train_embeddings1.append(output1.detach().cpu())
                     epoch_train_embeddings2.append(output2.detach().cpu())
                     epoch_train_labels.append(label.detach().cpu())
@@ -185,20 +216,20 @@ class SiameseResNet(nn.Module):
                 pbar.set_postfix({'loss': train_loss / len(pbar)})
 
             # Compute training metrics
-            train_embeddings1 = torch.cat(epoch_train_embeddings1).to(device) if training_mode else None
-            train_embeddings2 = torch.cat(epoch_train_embeddings2).to(device) if training_mode else None
-            train_labels = torch.cat(epoch_train_labels).to(device) if training_mode else None
+            train_embeddings1 = torch.cat(epoch_train_embeddings1).to(device) if not tuning_mode else None
+            train_embeddings2 = torch.cat(epoch_train_embeddings2).to(device) if not tuning_mode else None
+            train_labels = torch.cat(epoch_train_labels).to(device) if not tuning_mode else None
 
             # For validation, we need to compute metrics even if not storing
-            if training_mode or val_loader is not None:
+            if not tuning_mode or val_loader is not None:
                 train_metrics = self.compute_metrics(
-                    train_embeddings1 if training_mode else output1,
-                    train_embeddings2 if training_mode else output2,
-                    train_labels if training_mode else label
+                    train_embeddings1 if not tuning_mode else output1,
+                    train_embeddings2 if not tuning_mode else output2,
+                    train_labels if not tuning_mode else label
                 )
                 epoch_train_loss = train_loss / len(train_loader)
 
-            if training_mode:
+            if not tuning_mode:
                 # Store training results
                 results['metrics']['train']['loss'].append(epoch_train_loss)
                 for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']:
@@ -222,10 +253,10 @@ class SiameseResNet(nn.Module):
 
             # Validation phase
             if val_loader is not None:
-                val_results = self.evaluate(val_loader, criterion, device, training_mode)
+                val_results = self.evaluate(val_loader, criterion, device, not tuning_mode)
                 val_loss = val_results['metrics']['loss']
 
-                if training_mode:
+                if not tuning_mode:
                     # Store validation results
                     results['metrics']['val']['loss'].append(val_loss)
                     for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']:
@@ -249,11 +280,19 @@ class SiameseResNet(nn.Module):
                         mlflow.pytorch.log_model(self, "best_model")
                         torch.save(self.state_dict(), 'best_model.pth')
 
+                    # Early stopping check
+                    early_stopping(val_loss, self)
+                    if early_stopping.early_stop:
+                        print(f"Early stopping triggered at epoch {epoch + 1}")
+                        # Load best model
+                        self.load_state_dict(torch.load('best_model.pth'))
+                        break
+
                 print(f"Val - Loss: {val_loss:.4f}, "
                       f"Acc: {val_results['metrics']['accuracy']:.4f}, "
                       f"AUC: {val_results['metrics']['roc_auc']:.4f}")
 
-        if training_mode:
+        if not tuning_mode:
             # Final processing of embeddings
             for phase in ['train', 'val']:
                 if results['embeddings'][phase]['embeddings1']:

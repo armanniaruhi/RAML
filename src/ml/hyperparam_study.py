@@ -1,64 +1,72 @@
 import optuna
+from optuna.samplers import TPESampler
 from src.ml.resNet50 import SiameseResNet
+from src.ml.losses_utils import ContrastiveLoss
+import torch
 
-def objective(trial, train_loader, val_loader, device='cuda'):
-    """
-    Objective function for Optuna optimization.
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def objective(trial, train_loader, val_loader):
+    # Define the hyperparameter search space
+    learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-2, log=True)
+    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
+    margin = trial.suggest_float('margin', 0.5, 10.0)
+    patience = trial.suggest_int('patience', 1, 10)
 
-    Args:
-        trial: Optuna trial object
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        device: Device to use for training
+    # Initialize model fresh for each trial to avoid parameter leakage
+    model = SiameseResNet().to(device)
 
-    Returns:
-        Validation loss
-    """
-    # Suggest hyperparameters
-    learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
-    num_epochs = trial.suggest_int('num_epochs', 5, 20)
+    
+    optimizer = torch.optim.Adam(model.parameters(),
+                                     lr=learning_rate,
+                                     weight_decay=weight_decay)
 
-    # Create model
-    model = SiameseResNet()
-
-    # Train model and get validation loss
-    val_loss = model.train_model(
+    results = model.train_model_constructive(
         train_loader=train_loader,
         val_loader=val_loader,
-        learning_rate=learning_rate,
-        num_epochs=num_epochs,
-        device=device
+        criterion=ContrastiveLoss(margin=margin),
+        optimizer=optimizer,  # Pass the created optimizer
+        num_epochs=5,
+        device=device,
+        patience=patience,
+        experiment_name='SiameseResNet',
+        tuning_mode=True
     )
 
-    return val_loss
+    return results['val_loss']
 
-def optimize_hyperparameters(train_loader, val_loader, n_trials=50, device='cuda'):
-    """
-    Run Optuna optimization for the Siamese network.
 
-    Args:
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        n_trials: Number of optimization trials
-        device: Device to use for training
+def run_optuna_study(train_loader, val_loader, n_trials=50, study_name="siamese_study"):
+    # Create a study with TPE sampler
+    sampler = TPESampler(seed=42)
+    study = optuna.create_study(
+        study_name=study_name,
+        direction='minimize',  # We want to minimize validation loss
+        sampler=sampler,
+        storage=f"sqlite:///{study_name}.db",  # Save results to SQLite DB
+        load_if_exists=True
+    )
 
-    Returns:
-        study: Optuna study object with optimization results
-    """
-    study = optuna.create_study(direction='minimize')
+    # Wrap the objective with lambda to pass additional arguments
     study.optimize(
-        lambda trial: objective(trial, train_loader, val_loader, device),
+        lambda trial: objective(trial, train_loader, val_loader),
         n_trials=n_trials,
-        timeout=3600
+        show_progress_bar=True
     )
 
-    print("Number of finished trials: ", len(study.trials))
+    # Print and save results
     print("Best trial:")
     trial = study.best_trial
-
     print(f"  Value: {trial.value}")
     print("  Params: ")
     for key, value in trial.params.items():
         print(f"    {key}: {value}")
+
+    # Save importance plot
+    fig = optuna.visualization.plot_param_importances(study)
+    fig.write_html(f"{study_name}_importance.html")
+
+    # Save optimization history
+    fig = optuna.visualization.plot_optimization_history(study)
+    fig.write_html(f"{study_name}_history.html")
 
     return study
