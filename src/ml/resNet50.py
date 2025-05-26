@@ -1,18 +1,15 @@
 import torch
 import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
-from tqdm import tqdm
-from torch.optim import AdamW
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
-                            f1_score, roc_curve, roc_auc_score)
-import mlflow
-import mlflow.pytorch
-from typing import Dict, Optional
+                             f1_score, roc_curve, roc_auc_score)
+from typing import Dict, Optional, Tuple
+import tqdm
 from src.ml.model_utils import EarlyStopping
 
 
 class SiameseResNet(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_dim: int = 128, hidden_dim: int = 512):
         """
         Description:
         Creates a Siamese network using ResNet50 as the base model.
@@ -20,30 +17,25 @@ class SiameseResNet(nn.Module):
                 - The ResNet50 expects input images of size `(batch_size, 3, 224, 224)`
                 - 3 channels (RGB)
                 - 224x224 pixels (standard ResNet input size)
-    
+
             2. After ResNet backbone (before the fc layers):
                 - Shape: `(batch_size, 2048, 1, 1)`
                 - The 2048 comes from the final convolutional layer of ResNet50
                 - The 1x1 spatial dimensions are the result of the average pooling
-    
+
             3. After flattening:
                 - Shape: `(batch_size, 2048)`
                 - This flattened vector is fed into the fully connected layers
-            
+
             4. Fully Connected Layers:
                 - First FC layer: 2048 → 512
                 - ReLU activation maintains 512 dimensions
                 - Final FC layer: 512 → 128
                 - Final output shape: `(batch_size, 128)`
-    
+
         Args:
             embedding_dim (int): Final embedding dimension (default: 128)
             hidden_dim (int): Hidden layer dimension (default: 512)
-        
-        Returns:
-            model: Configured SiameseResNet model
-            criterion: Contrastive loss function
-
         """
         super(SiameseResNet, self).__init__()
         # Load pretrained ResNet50 with the latest weights
@@ -55,28 +47,41 @@ class SiameseResNet(nn.Module):
             param.requires_grad = False
 
         self.fc = nn.Sequential(
-            nn.Linear(2048, 512),            # First fully connected layer
-            nn.ReLU(),                                     # Activation function
-            nn.Linear(512, 128),     # Second fully connected layer (outputs embedding)
+            nn.Linear(2048, hidden_dim),  # First fully connected layer
+            nn.ReLU(),  # Activation function
+            nn.Linear(hidden_dim, embedding_dim)  # Second fully connected layer
         )
 
-    def forward_one(self, x):
-        x = self.resnet(x)
-        x = x.view(x.size()[0], -1)
-        output = self.fc(x)
-        return output   # Emmedding of shape (batch_size, 128)
-    
-    def forward(self, input1, input2):
-        # Forward pass for both inputs
-        output1 = self.forward_one(input1)
-        output2 = self.forward_one(input2)
-        return output1, output2
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the network.
 
-    def compute_metrics(self, outputs1: torch.Tensor,
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, 3, 224, 224)
+
+        Returns:
+            torch.Tensor: Output embedding of shape (batch_size, 128)
+        """
+        x = self.resnet(x)
+        x = torch.flatten(x, 1)  # Flatten all dimensions except batch
+        output = self.fc(x)
+        return output
+
+    def compute_metrics(self,
+                        outputs1: torch.Tensor,
                         outputs2: torch.Tensor,
                         labels: torch.Tensor,
                         threshold: float = 0.5) -> Dict[str, float]:
-        """Compute classification metrics including ROC/AUC"""
+        """Compute classification metrics including ROC/AUC
+
+        Args:
+            outputs1: Embeddings from first image
+            outputs2: Embeddings from second image
+            labels: Ground truth labels (1 for similar, 0 for dissimilar)
+            threshold: Threshold for binary classification
+
+        Returns:
+            Dictionary containing metrics and ROC curve data
+        """
         cos = nn.CosineSimilarity(dim=1)
         similarities = cos(outputs1, outputs2)
 
@@ -102,164 +107,100 @@ class SiameseResNet(nn.Module):
 
         return metrics
 
-    def train_model_constructive(self,
-                                 train_loader: torch.utils.data.DataLoader,
-                                 val_loader: Optional[torch.utils.data.DataLoader] = None,
-                                 criterion: Optional[nn.Module] = None,
-                                 num_epochs: int = 10,
-                                 optimizer: Optional[nn.Module] = torch.optim.Adam,
-                                 device: torch.device = 'cuda',
-                                 experiment_name: str = 'SiameseResNet',
-                                 tuning_mode: bool = True,
-                                 patience: int = 7
-                                 ) -> Optional[Dict]:
-        """
-        Train or evaluate the model with optional tracking
+    def train_model(self,
+                    train_loader: torch.utils.data.DataLoader,
+                    val_loader: Optional[torch.utils.data.DataLoader] = None,
+                    criterion: Optional[nn.Module] = None,
+                    num_epochs: int = 10,
+                    optimizer: Optional[torch.optim.Optimizer] = None,
+                    device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+                    experiment_name: str = 'SiameseResNet',
+                    tuning_mode: bool = True,
+                    patience: int = 7
+                    ) -> Dict[str, list]:
+        """Train the Siamese network.
 
         Args:
-            tuning_mode: If True, stores metrics, embeddings and logs to MLflow.
-                          If False, only computes metrics without storing.
-            patience: Number of epochs to wait before early stopping
-        """
+            train_loader: DataLoader for training data
+            val_loader: Optional DataLoader for validation data
+            criterion: Loss function
+            num_epochs: Number of training epochs
+            optimizer: Optimization algorithm
+            device: Device to train on (cuda or cpu)
+            experiment_name: Name for tracking
+            tuning_mode: Whether in hyperparameter tuning mode
+            patience: Patience for early stopping
 
-        # Initialize early stopping
+        Returns:
+            Dictionary containing training history
+        """
+        if optimizer is None:
+            optimizer = torch.optim.Adam(self.parameters())
+
+        if criterion is None:
+            raise ValueError("Criterion (loss function) must be provided")
+
         early_stopping = EarlyStopping(patience=patience, verbose=True)
 
         counter = []
         train_loss_history = []
         val_loss_history = []
-        iteration_number = 0
 
-        # Iterate through the epochs
         for epoch in range(num_epochs):
-            # Training phase
             self.train()
             train_loss = 0.0
             train_n_batches = 0
 
-            # Iterate over training batches
-            for i, (img0, img1, label) in enumerate(train_loader, 0):
-                # Move data to device
-                img0, img1 = img0.to(device), img1.to(device)
-                label = label.to(device)
-
-                # Zero the gradients
+            for i, (imgs, labels) in enumerate(
+                    tqdm.tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs} - Training")):
+                imgs, labels = imgs.to(device), labels.to(device)
                 optimizer.zero_grad()
-
-                # Forward pass
-                output1, output2 = self(img0, img1)
-
-                # Calculate loss
-                loss_contrastive = criterion(output1, output2, label)
-
-                # Backward pass and optimize
-                loss_contrastive.backward()
+                embeddings = self(imgs)
+                loss = criterion(embeddings, labels)
+                loss.backward()
                 optimizer.step()
 
-                # Accumulate loss
-                train_loss += loss_contrastive.item()
+                train_loss += loss.item()
                 train_n_batches += 1
 
-                # Log training progress
                 if i % 5 == 0:
-                    train_loss_history.append(loss_contrastive.item())
-                    print(f"Epoch {epoch} - Iteration {i} - Training Loss: {loss_contrastive.item():.4f}")
+                    train_loss_history.append(loss.item())
+                    print(f"Epoch {epoch} - Iteration {i} - Training Loss: {loss.item():.8f}")
 
-            # Calculate average training loss for the epochs
             avg_train_loss = train_loss / train_n_batches
 
-            # Validation phase
             if val_loader is not None:
                 self.eval()
                 val_loss = 0.0
                 val_n_batches = 0
 
                 with torch.no_grad():
-                    for img0, img1, label in val_loader:
-                        # Move data to device
-                        img0, img1 = img0.to(device), img1.to(device)
-                        label = label.to(device)
+                    for i, (imgs, labels) in enumerate(
+                            tqdm.tqdm(val_loader, desc=f"Epoch {epoch + 1}/{num_epochs} - Validation")):
+                        imgs, labels = imgs.to(device), labels.to(device)
+                        embeddings = self(imgs)
+                        loss = criterion(embeddings, labels)
 
-                        # Forward pass
-                        output1, output2 = self(img0, img1)
-
-                        # Calculate loss
-                        loss_contrastive = criterion(output1, output2, label)
-
-                        # Accumulate loss
-                        val_loss += loss_contrastive.item()
+                        val_loss += loss.item()
                         val_n_batches += 1
 
-                # Calculate average validation loss
                 avg_val_loss = val_loss / val_n_batches
                 val_loss_history.append(avg_val_loss)
 
-                print(f"Epoch {epoch} - Training Loss: {avg_train_loss:.4f}, Validation Loss: {avg_val_loss:.4f}")
-
-                # Early stopping check using validation loss
+                print(f"Epoch {epoch} - Training Loss: {avg_train_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
                 early_stopping(avg_val_loss, self)
             else:
-                # If no validation loader, use training loss for early stopping
                 early_stopping(avg_train_loss, self)
 
             if early_stopping.early_stop:
                 print("Early stopping triggered")
                 break
 
-        # Load the best model weights
-        self.load_state_dict(early_stopping.best_model_state)
+        if early_stopping.best_model_state is not None:
+            self.load_state_dict(early_stopping.best_model_state)
 
         return {
             'train_loss_history': train_loss_history,
             'val_loss_history': val_loss_history,
             'counter': counter
         }
-
-    def train_model_ms(self, train_loader, val_loader=None,
-                       criterion=None, num_epochs=10,
-                       optimizer=None, device='cuda',
-                       patience=5, tuning_mode=True):
-        '''
-        Train the model using MultiSimilarityLoss on batches of (image, label) pairs.
-
-        Args:
-            train_loader: DataLoader returning (image, label) tuples.
-            criterion: Multi-Similarity Loss function.
-            num_epochs: Number of training epochs.
-            optimizer: Optimizer for model parameters.
-            device: Training device ('cuda' or 'cpu').
-            patience: Early stopping patience (number of epochs).
-        '''
-
-        self.train()
-        early_stopping = EarlyStopping(patience=patience, verbose=True)
-
-        for epoch in range(num_epochs):  # Epoch loop (e.g. 10 Epochs)
-            train_loss = 0.0
-            for imgs, labels in train_loader:  # Batch loop (e.g. 32 Img)
-                imgs, labels = imgs.to(device), labels.to(device)
-                optimizer.zero_grad()
-
-                # Embeddings calculation (128-dim vector)
-                embeddings = self.forward_one(imgs)
-
-                # Loss calculation (MS Loss automatically handles the pairwise comparisons)
-                loss = criterion(embeddings, labels)
-
-                # Gradient calculation
-                loss.backward()
-
-                # Parameter update
-                optimizer.step()
-
-                # Loss summation
-                train_loss += loss.item()
-
-            avg_loss = train_loss / len(train_loader)
-            print(f"Epoch {epoch} - MS Training Loss: {avg_loss:.4f}")
-
-            early_stopping(avg_loss, self)
-            if early_stopping.early_stop:
-                break
-
-        self.load_state_dict(early_stopping.best_model_state)

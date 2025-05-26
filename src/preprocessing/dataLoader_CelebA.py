@@ -8,6 +8,20 @@ import random
 import torch
 
 
+def _load_partitions(partition_file):
+    partition_map = {}
+    with open(partition_file, 'r') as f:
+        # Skip header if it exists
+        if 'csv' in partition_file.lower():
+            next(f, None)
+        for line in f:
+            parts = line.strip().split(',')
+            if len(parts) == 2:
+                filename, partition = parts
+                partition_map[filename] = int(partition)
+    return partition_map
+
+
 class CelebALabeledDataset(Dataset):
     def __init__(self, image_dir, label_file, img_size=64, transform=None, partition_file=None, partition_id=None, loss_type='contrastive'):
         """
@@ -25,7 +39,7 @@ class CelebALabeledDataset(Dataset):
 
         # Load partition information if provided
         if partition_file and partition_id is not None:
-            partition_map = self._load_partitions(partition_file)
+            partition_map = _load_partitions(partition_file)
             self.image_files = [f for f in os.listdir(image_dir)
                                 if f in self.label_map and f in partition_map
                                 and partition_map[f] == partition_id]
@@ -42,10 +56,10 @@ class CelebALabeledDataset(Dataset):
 
         if transform is None:
             self.transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
+                transforms.Resize([256, 256]),
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                                     std=[0.5, 0.5, 0.5])
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
         else:
             self.transform = transform
@@ -60,81 +74,18 @@ class CelebALabeledDataset(Dataset):
                     label_map[filename] = int(label)
         return label_map
 
-    def _load_partitions(self, partition_file):
-        partition_map = {}
-        with open(partition_file, 'r') as f:
-            # Skip header if it exists
-            if 'csv' in partition_file.lower():
-                next(f, None)
-            for line in f:
-                parts = line.strip().split(',')
-                if len(parts) == 2:
-                    filename, partition = parts
-                    partition_map[filename] = int(partition)
-        return partition_map
-
     def __len__(self):
         return len(self.image_files)
 
     def __getitem__(self, idx):
-        """
-        Returns a tuple containing:
-        - anchor image
-        - second image (either same class or different class)
-        - target (1 if same class, 0 if different class)
-        """
-        if self.loss_type == 'contrastive':
-            # Get anchor image
-            anchor_filename = self.image_files[idx]
-            anchor_label = self.label_map[anchor_filename]
-            anchor_img = Image.open(os.path.join(self.image_dir, anchor_filename)).convert('RGB')
+        filename = self.image_files[idx]
+        label = self.label_map[filename]
+        img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
 
-            # Randomly decide whether to get a positive or negative pair
-            should_get_same_class = random.randint(0, 1)
-
-            if should_get_same_class:
-                # Get another image from the same class, excluding the anchor itself
-                positive_files = self.label_to_images[anchor_label]
-                same_class_files = [f for f in positive_files if f != anchor_filename]
-
-                if same_class_files:
-                    second_filename = random.choice(same_class_files)
-                else:
-                    # Fallback: force a different class instead
-                    should_get_same_class = False  # fallback to negative
-                    other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
-                    other_label = random.choice(other_labels)
-                    second_filename = random.choice(self.label_to_images[other_label])
-                    target = 0
-
-            if not should_get_same_class:
-                # Get an image from a different class
-                other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
-                other_label = random.choice(other_labels)
-                second_filename = random.choice(self.label_to_images[other_label])
-                target = 0
-
-            else:
-                target = 1
-
-            second_img = Image.open(os.path.join(self.image_dir, second_filename)).convert('RGB')
-
-            # Apply transformations
-            if self.transform:
-                anchor_img = self.transform(anchor_img)
-                second_img = self.transform(second_img)
-
-            return anchor_img, second_img, torch.FloatTensor([target])
-
-        elif self.loss_type == 'ms':
-            filename = self.image_files[idx]
-            label = self.label_map[filename]
-            img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
-
-            # Apply transformation
-            if self.transform:
-                img = self.transform(img)
-            return img, label
+        # Apply transformation
+        if self.transform:
+            img = self.transform(img)
+        return img, label
 
 
 def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True, loss_type='contrastive'):
