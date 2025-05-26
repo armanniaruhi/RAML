@@ -64,7 +64,7 @@ class SiameseResNet(nn.Module):
         x = self.resnet(x)
         x = x.view(x.size()[0], -1)
         output = self.fc(x)
-        return output
+        return output   # Emmedding of shape (batch_size, 128)
     
     def forward(self, input1, input2):
         # Forward pass for both inputs
@@ -102,6 +102,9 @@ class SiameseResNet(nn.Module):
 
         return metrics
 
+    # TODO -> Find the best approach to implement the MS Loss in the Project
+    # If new DataLoader is better or new function like `train_model_constructive` is needed
+    # If possible check in the following function the other representation metrics or way related to results (Mlflow)
     def train_model_constructive(self,
                                  train_loader: torch.utils.data.DataLoader,
                                  val_loader: Optional[torch.utils.data.DataLoader] = None,

@@ -7,8 +7,9 @@ from torch.utils.data import Subset
 import random
 import torch
 
+
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, img_size=64, transform=None, partition_file=None, partition_id=None):
+    def __init__(self, image_dir, label_file, img_size=64, transform=None, partition_file=None, partition_id=None, loss_type='contrastive'):
         """
         Args:
             image_dir (str): Path to the directory containing images.
@@ -18,15 +19,16 @@ class CelebALabeledDataset(Dataset):
             partition_file (str, optional): Path to the partition file for train/val/test split.
             partition_id (int, optional): Partition ID to use (0=train, 1=val, 2=test).
         """
+        self.loss_type = loss_type
         self.image_dir = image_dir
         self.label_map = self._load_labels(label_file)
-        
+
         # Load partition information if provided
         if partition_file and partition_id is not None:
             partition_map = self._load_partitions(partition_file)
-            self.image_files = [f for f in os.listdir(image_dir) 
-                              if f in self.label_map and f in partition_map 
-                              and partition_map[f] == partition_id]
+            self.image_files = [f for f in os.listdir(image_dir)
+                                if f in self.label_map and f in partition_map
+                                and partition_map[f] == partition_id]
         else:
             self.image_files = [f for f in os.listdir(image_dir) if f in self.label_map]
 
@@ -43,7 +45,7 @@ class CelebALabeledDataset(Dataset):
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                                  std=[0.5, 0.5, 0.5])
+                                     std=[0.5, 0.5, 0.5])
             ])
         else:
             self.transform = transform
@@ -81,47 +83,51 @@ class CelebALabeledDataset(Dataset):
         - second image (either same class or different class)
         - target (1 if same class, 0 if different class)
         """
-        # Get anchor image
-        anchor_filename = self.image_files[idx]
-        anchor_label = self.label_map[anchor_filename]
-        anchor_img = Image.open(os.path.join(self.image_dir, anchor_filename)).convert('RGB')
+        if self.loss_type == 'contrastive':
+            # Get anchor image
+            anchor_filename = self.image_files[idx]
+            anchor_label = self.label_map[anchor_filename]
+            anchor_img = Image.open(os.path.join(self.image_dir, anchor_filename)).convert('RGB')
 
-        # Randomly decide whether to get a positive or negative pair
-        should_get_same_class = random.randint(0, 1)
+            # Randomly decide whether to get a positive or negative pair
+            should_get_same_class = random.randint(0, 1)
 
-        if should_get_same_class:
-            # Get another image from the same class, excluding the anchor itself
-            positive_files = self.label_to_images[anchor_label]
-            same_class_files = [f for f in positive_files if f != anchor_filename]
+            if should_get_same_class:
+                # Get another image from the same class, excluding the anchor itself
+                positive_files = self.label_to_images[anchor_label]
+                same_class_files = [f for f in positive_files if f != anchor_filename]
 
-            if same_class_files:
-                second_filename = random.choice(same_class_files)
-            else:
-                # Fallback: force a different class instead
-                should_get_same_class = False  # fallback to negative
+                if same_class_files:
+                    second_filename = random.choice(same_class_files)
+                else:
+                    # Fallback: force a different class instead
+                    should_get_same_class = False  # fallback to negative
+                    other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
+                    other_label = random.choice(other_labels)
+                    second_filename = random.choice(self.label_to_images[other_label])
+                    target = 0
+
+            if not should_get_same_class:
+                # Get an image from a different class
                 other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
                 other_label = random.choice(other_labels)
                 second_filename = random.choice(self.label_to_images[other_label])
                 target = 0
 
-        if not should_get_same_class:
-            # Get an image from a different class
-            other_labels = [l for l in self.label_to_images.keys() if l != anchor_label]
-            other_label = random.choice(other_labels)
-            second_filename = random.choice(self.label_to_images[other_label])
-            target = 0
+            else:
+                target = 1
 
-        else:
-            target = 1
+            second_img = Image.open(os.path.join(self.image_dir, second_filename)).convert('RGB')
 
-        second_img = Image.open(os.path.join(self.image_dir, second_filename)).convert('RGB')
+            # Apply transformations
+            if self.transform:
+                anchor_img = self.transform(anchor_img)
+                second_img = self.transform(second_img)
 
-        # Apply transformations
-        if self.transform:
-            anchor_img = self.transform(anchor_img)
-            second_img = self.transform(second_img)
+            return anchor_img, second_img, torch.FloatTensor([target])
+        elif self.loss_type == 'ms':
+            pass
 
-        return anchor_img, second_img, torch.FloatTensor([target])
 
 def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True):
     """
@@ -157,11 +163,11 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
     """
     # Create datasets for each partition
     train_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                       partition_file=partition_file, partition_id=0)
+                                         partition_file=partition_file, partition_id=0)
     val_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                     partition_file=partition_file, partition_id=1)
+                                       partition_file=partition_file, partition_id=1)
     test_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                      partition_file=partition_file, partition_id=2)
+                                        partition_file=partition_file, partition_id=2)
 
     # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -169,6 +175,7 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
+
 
 def create_subset_loader(original_loader, num_samples=1000):
     """Create a subset data loader from the original loader"""
