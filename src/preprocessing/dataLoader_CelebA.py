@@ -125,11 +125,19 @@ class CelebALabeledDataset(Dataset):
                 second_img = self.transform(second_img)
 
             return anchor_img, second_img, torch.FloatTensor([target])
+
         elif self.loss_type == 'ms':
-            pass
+            filename = self.image_files[idx]
+            label = self.label_map[filename]
+            img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
+
+            # Apply transformation
+            if self.transform:
+                img = self.transform(img)
+            return img, label
 
 
-def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True):
+def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True, loss_type='contrastive'):
     """
     Creates and returns a DataLoader for Siamese network training
 
@@ -139,15 +147,16 @@ def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, sh
         batch_size (int): Batch size for the dataloader
         img_size (int): Size to resize the images to
         shuffle (bool): Whether to shuffle the data
+        loss_type (str): Type of loss function to use ('contrastive' or 'ms')
 
     Returns:
         DataLoader: PyTorch DataLoader object
     """
-    dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size)
+    dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size, loss_type=loss_type)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
-def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64):
+def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64, loss_type='contrastive'):
     """
     Creates separate dataloaders for train, validation, and test sets based on partition file.
 
@@ -157,17 +166,18 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
         partition_file (str): Path to the list_eval_partition.csv file
         batch_size (int): Batch size for the dataloaders
         img_size (int): Size to resize the images to
+        loss_type (str): Type of loss function to use ('contrastive' or 'ms')
 
     Returns:
         tuple: (train_loader, val_loader, test_loader)
     """
     # Create datasets for each partition
     train_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                         partition_file=partition_file, partition_id=0)
+                                         partition_file=partition_file, partition_id=0, loss_type=loss_type)
     val_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                       partition_file=partition_file, partition_id=1)
+                                       partition_file=partition_file, partition_id=1, loss_type=loss_type)
     test_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                        partition_file=partition_file, partition_id=2)
+                                        partition_file=partition_file, partition_id=2, loss_type=loss_type)
 
     # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
