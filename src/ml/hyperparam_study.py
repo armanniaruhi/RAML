@@ -1,11 +1,10 @@
 import optuna
 from optuna.samplers import TPESampler
 from src.ml.resNet50 import SiameseResNet
-from src.ml.losses_utils import ContrastiveLoss
 import torch
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-def objective(trial, train_loader, val_loader):
+def objective(trial, criterion, train_loader, val_loader):
     # Define the hyperparameter search space
     learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
