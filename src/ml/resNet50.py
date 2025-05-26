@@ -102,9 +102,6 @@ class SiameseResNet(nn.Module):
 
         return metrics
 
-    # TODO -> Find the best approach to implement the MS Loss in the Project
-    # If new DataLoader is better or new function like `train_model_constructive` is needed
-    # If possible check in the following function the other representation metrics or way related to results (Mlflow)
     def train_model_constructive(self,
                                  train_loader: torch.utils.data.DataLoader,
                                  val_loader: Optional[torch.utils.data.DataLoader] = None,
@@ -217,3 +214,52 @@ class SiameseResNet(nn.Module):
             'val_loss_history': val_loss_history,
             'counter': counter
         }
+
+    def train_model_ms(self, train_loader, val_loader=None,
+                       criterion=None, num_epochs=10,
+                       optimizer=None, device='cuda',
+                       patience=5, tuning_mode=True):
+        '''
+        Train the model using MultiSimilarityLoss on batches of (image, label) pairs.
+
+        Args:
+            train_loader: DataLoader returning (image, label) tuples.
+            criterion: Multi-Similarity Loss function.
+            num_epochs: Number of training epochs.
+            optimizer: Optimizer for model parameters.
+            device: Training device ('cuda' or 'cpu').
+            patience: Early stopping patience (number of epochs).
+        '''
+
+        self.train()
+        early_stopping = EarlyStopping(patience=patience, verbose=True)
+
+        for epoch in range(num_epochs):  # Epoch loop (e.g. 10 Epochs)
+            train_loss = 0.0
+            for imgs, labels in train_loader:  # Batch loop (e.g. 32 Img)
+                imgs, labels = imgs.to(device), labels.to(device)
+                optimizer.zero_grad()
+
+                # Embeddings calculation (128-dim vector)
+                embeddings = self.forward_one(imgs)
+
+                # Loss calculation (MS Loss automatically handles the pairwise comparisons)
+                loss = criterion(embeddings, labels)
+
+                # Gradient calculation
+                loss.backward()
+
+                # Parameter update
+                optimizer.step()
+
+                # Loss summation
+                train_loss += loss.item()
+
+            avg_loss = train_loss / len(train_loader)
+            print(f"Epoch {epoch} - MS Training Loss: {avg_loss:.4f}")
+
+            early_stopping(avg_loss, self)
+            if early_stopping.early_stop:
+                break
+
+        self.load_state_dict(early_stopping.best_model_state)
