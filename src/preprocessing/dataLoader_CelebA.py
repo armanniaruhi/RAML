@@ -1,14 +1,13 @@
-# https://www.kaggle.com/datasets/kushsheth/face-vae/data
 import os
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
-from torch.utils.data import Subset
-import random
 import torch
+from pytorch_metric_learning.samplers import MPerClassSampler
 
 
 def _load_partitions(partition_file):
+    """Load train/val/test partition mappings from file."""
     partition_map = {}
     with open(partition_file, 'r') as f:
         # Skip header if it exists
@@ -23,48 +22,49 @@ def _load_partitions(partition_file):
 
 
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, img_size=64, transform=None, partition_file=None, partition_id=None, loss_type='contrastive'):
+    def __init__(self, image_dir, label_file, img_size=64, transform=None,
+                 partition_file=None, partition_id=None):
         """
         Args:
-            image_dir (str): Path to the directory containing images.
-            label_file (str): Path to the .txt file with image labels.
-            img_size (int): Resize all images to this size.
-            transform (callable, optional): Optional transforms to apply to images.
-            partition_file (str, optional): Path to the partition file for train/val/test split.
-            partition_id (int, optional): Partition ID to use (0=train, 1=val, 2=test).
+            image_dir (str): Path to image directory
+            label_file (str): Path to label file
+            img_size (int): Target image size
+            transform (callable): Optional transforms
+            partition_file (str): Path to partition file
+            partition_id (int): 0=train, 1=val, 2=test
         """
-        self.loss_type = loss_type
         self.image_dir = image_dir
         self.label_map = self._load_labels(label_file)
 
-        # Load partition information if provided
+        # Load partition information
         if partition_file and partition_id is not None:
             partition_map = _load_partitions(partition_file)
-            self.image_files = [f for f in os.listdir(image_dir)
-                                if f in self.label_map and f in partition_map
-                                and partition_map[f] == partition_id]
+            self.image_files = [
+                f for f in os.listdir(image_dir)
+                if f in self.label_map and f in partition_map
+                   and partition_map[f] == partition_id
+            ]
         else:
             self.image_files = [f for f in os.listdir(image_dir) if f in self.label_map]
 
-        # Group images by label
-        self.label_to_images = {}
-        for img_file in self.image_files:
-            label = self.label_map[img_file]
-            if label not in self.label_to_images:
-                self.label_to_images[label] = []
-            self.label_to_images[label].append(img_file)
+        # Store labels as list for sampler access
+        self.labels = [self.label_map[img_file] for img_file in self.image_files]
+        self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
 
+        # Default transforms if none provided
         if transform is None:
             self.transform = transforms.Compose([
                 transforms.Resize([256, 256]),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                transforms.Normalize([0.485, 0.456, 0.406],
+                                     [0.229, 0.224, 0.225])
             ])
         else:
             self.transform = transform
 
     def _load_labels(self, label_file):
+        """Load label mappings from file."""
         label_map = {}
         with open(label_file, 'r') as f:
             for line in f:
@@ -82,56 +82,71 @@ class CelebALabeledDataset(Dataset):
         label = self.label_map[filename]
         img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
 
-        # Apply transformation
         if self.transform:
             img = self.transform(img)
         return img, label
 
 
-def get_siamese_dataloader(image_dir, label_file, batch_size=32, img_size=64, shuffle=True, loss_type='contrastive'):
+def get_contrastive_dataloader(image_dir, label_file, batch_size=32, img_size=64):
     """
-    Creates and returns a DataLoader for Siamese network training
-
+    Creates DataLoader for contrastive learning with guaranteed positive pairs.
     Args:
-        image_dir (str): Directory containing the images
-        label_file (str): Path to the label file
-        batch_size (int): Batch size for the dataloader
-        img_size (int): Size to resize the images to
-        shuffle (bool): Whether to shuffle the data
-        loss_type (str): Type of loss function to use ('contrastive' or 'ms')
-
+        image_dir: Directory containing images
+        label_file: Path to label file
+        batch_size: Batch size
+        img_size: Image size
     Returns:
-        DataLoader: PyTorch DataLoader object
+        DataLoader with MPerClassSampler
     """
-    dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size, loss_type=loss_type)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size)
+
+    sampler = MPerClassSampler(
+        labels=dataset.labels,
+        m=2,  # At least 2 samples per class per batch
+        batch_size=batch_size,
+        length_before_new_iter=len(dataset)
+    )
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        drop_last=True
+    )
 
 
-def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64, loss_type='contrastive'):
+def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64):
     """
-    Creates separate dataloaders for train, validation, and test sets based on partition file.
-
+    Creates train/val/test dataloaders with proper sampling for contrastive learning.
     Args:
-        image_dir (str): Directory containing the images
-        label_file (str): Path to the label file
-        partition_file (str): Path to the list_eval_partition.csv file
-        batch_size (int): Batch size for the dataloaders
-        img_size (int): Size to resize the images to
-        loss_type (str): Type of loss function to use ('contrastive' or 'ms')
-
+        image_dir: Image directory
+        label_file: Label file path
+        partition_file: Partition file path
+        batch_size: Batch size
+        img_size: Image size
     Returns:
-        tuple: (train_loader, val_loader, test_loader)
+        Tuple of (train_loader, val_loader, test_loader)
     """
-    # Create datasets for each partition
-    train_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                         partition_file=partition_file, partition_id=0, loss_type=loss_type)
-    val_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                       partition_file=partition_file, partition_id=1, loss_type=loss_type)
-    test_dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size,
-                                        partition_file=partition_file, partition_id=2, loss_type=loss_type)
+
+    train_dataset = CelebALabeledDataset( image_dir, label_file, img_size=img_size,
+        partition_file=partition_file, partition_id=0)
+    val_dataset = CelebALabeledDataset(
+        image_dir, label_file, img_size=img_size,
+        partition_file=partition_file, partition_id=1
+    )
+    test_dataset = CelebALabeledDataset(
+        image_dir, label_file, img_size=img_size,
+        partition_file=partition_file, partition_id=2
+    )
+
+    train_sampler = MPerClassSampler(
+        labels=train_dataset.labels,
+        m=2,
+        batch_size=batch_size,
+        length_before_new_iter=len(train_dataset))
 
     # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
@@ -139,22 +154,15 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
 
 
 def create_subset_loader(original_loader, num_samples=1000):
-    """Create a subset data loader from the original loader"""
-    # Get the original dataset
+    """Create a subset data loader from an existing loader."""
     original_dataset = original_loader.dataset
-
-    # Create indices for the subset
     subset_indices = torch.randperm(len(original_dataset))[:num_samples]
-
-    # Create subset dataset
     subset_dataset = Subset(original_dataset, subset_indices)
 
-    # Create new loader with same parameters but subset dataset
-    subset_loader = torch.utils.data.DataLoader(
+    return DataLoader(
         subset_dataset,
         batch_size=original_loader.batch_size,
-        shuffle=True,  # Typically want to shuffle for training
+        shuffle=True,
         num_workers=original_loader.num_workers,
         pin_memory=original_loader.pin_memory
     )
-    return subset_loader

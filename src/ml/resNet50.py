@@ -139,20 +139,20 @@ class SiameseResNet(nn.Module):
 
         if criterion is None:
             raise ValueError("Criterion (loss function) must be provided")
-
+        from pytorch_metric_learning import distances, losses, miners, reducers, testers
         early_stopping = EarlyStopping(patience=patience, verbose=True)
-
         counter = []
         train_loss_history = []
         val_loss_history = []
+        distance = distances.CosineSimilarity()
 
         for epoch in range(num_epochs):
             self.train()
             train_loss = 0.0
             train_n_batches = 0
 
-            for i, (imgs, labels) in enumerate(
-                    tqdm.tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs} - Training")):
+            pbar = tqdm.tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}")
+            for i, (imgs, labels) in enumerate(pbar):
                 imgs, labels = imgs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 embeddings = self(imgs)
@@ -162,12 +162,16 @@ class SiameseResNet(nn.Module):
 
                 train_loss += loss.item()
                 train_n_batches += 1
+                if i % 10 == 0:
+                    pbar.set_postfix({
+                        'batch_loss': f'{loss.item():.8f}'
+                    })
 
-                if i % 5 == 0:
-                    train_loss_history.append(loss.item())
-                    print(f"Epoch {epoch} - Iteration {i} - Training Loss: {loss.item():.8f}")
+            avg_loss = train_loss / train_n_batches
 
-            avg_train_loss = train_loss / train_n_batches
+            pbar.set_postfix({
+                'train_loss': f'{avg_loss:.8f}'
+            })
 
             if val_loader is not None:
                 self.eval()
@@ -187,10 +191,10 @@ class SiameseResNet(nn.Module):
                 avg_val_loss = val_loss / val_n_batches
                 val_loss_history.append(avg_val_loss)
 
-                print(f"Epoch {epoch} - Training Loss: {avg_train_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
+                print(f"Epoch {epoch} - Training Loss: {avg_val_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
                 early_stopping(avg_val_loss, self)
             else:
-                early_stopping(avg_train_loss, self)
+                early_stopping(avg_loss, self)
 
             if early_stopping.early_stop:
                 print("Early stopping triggered")
