@@ -139,12 +139,11 @@ class SiameseResNet(nn.Module):
 
         if criterion is None:
             raise ValueError("Criterion (loss function) must be provided")
-        from pytorch_metric_learning import distances, losses, miners, reducers, testers
+
         early_stopping = EarlyStopping(patience=patience, verbose=True)
         counter = []
         train_loss_history = []
         val_loss_history = []
-        distance = distances.CosineSimilarity()
 
         for epoch in range(num_epochs):
             self.train()

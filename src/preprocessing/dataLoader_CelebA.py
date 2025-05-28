@@ -87,22 +87,21 @@ class CelebALabeledDataset(Dataset):
         return img, label
 
 
-def get_contrastive_dataloader(image_dir, label_file, batch_size=32, img_size=64):
+def get_dataloader(image_dir, label_file, batch_size=32, m_per_sample=2):
     """
     Creates DataLoader for contrastive learning with guaranteed positive pairs.
     Args:
         image_dir: Directory containing images
         label_file: Path to label file
         batch_size: Batch size
-        img_size: Image size
     Returns:
         DataLoader with MPerClassSampler
     """
-    dataset = CelebALabeledDataset(image_dir, label_file, img_size=img_size)
+    dataset = CelebALabeledDataset(image_dir, label_file)
 
     sampler = MPerClassSampler(
         labels=dataset.labels,
-        m=2,  # At least 2 samples per class per batch
+        m=m_per_sample,  # At least 2 samples per class per batch
         batch_size=batch_size,
         length_before_new_iter=len(dataset)
     )
@@ -115,7 +114,7 @@ def get_contrastive_dataloader(image_dir, label_file, batch_size=32, img_size=64
     )
 
 
-def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, img_size=64):
+def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, m_per_sample=2):
     """
     Creates train/val/test dataloaders with proper sampling for contrastive learning.
     Args:
@@ -128,27 +127,41 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
         Tuple of (train_loader, val_loader, test_loader)
     """
 
-    train_dataset = CelebALabeledDataset( image_dir, label_file, img_size=img_size,
+    train_dataset = CelebALabeledDataset( image_dir, label_file,
         partition_file=partition_file, partition_id=0)
     val_dataset = CelebALabeledDataset(
-        image_dir, label_file, img_size=img_size,
+        image_dir, label_file,
         partition_file=partition_file, partition_id=1
     )
     test_dataset = CelebALabeledDataset(
-        image_dir, label_file, img_size=img_size,
+        image_dir, label_file,
         partition_file=partition_file, partition_id=2
     )
 
     train_sampler = MPerClassSampler(
         labels=train_dataset.labels,
-        m=2,
+        m=m_per_sample,
         batch_size=batch_size,
         length_before_new_iter=len(train_dataset))
 
+    val_sampler = MPerClassSampler(
+        labels=val_dataset.labels,
+        m=m_per_sample,
+        batch_size=batch_size,
+        length_before_new_iter=len(val_dataset)
+    )
+
+    test_sampler = MPerClassSampler(
+        labels=test_dataset.labels,
+        m=m_per_sample,
+        batch_size=batch_size,
+        length_before_new_iter=len(test_dataset)
+    )
+
     # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, shuffle=False)
 
     return train_loader, val_loader, test_loader
 
