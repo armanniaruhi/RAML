@@ -1,0 +1,13 @@
+PREPROCESSING:
+  image_dir: data/celeba/img_align_celeba
+  label_file: data/celeba/identity_CelebA.txt
+  partition_file: data/celeba/list_eval_partition.csv
+  batch_size: 16
+  m_per_sample: 16
+
+TRAINING:
+  lr: 0.001
+  weight_decay: 0.01
+  num_epochs: 10
+  patience: 5
+  loss_type: contrastive
