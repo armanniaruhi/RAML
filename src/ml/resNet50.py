@@ -7,64 +7,42 @@ from typing import Dict, Optional, Tuple
 import tqdm
 from src.ml.model_utils import EarlyStopping
 
-
 class SiameseResNet(nn.Module):
-    def __init__(self, embedding_dim: int = 128, hidden_dim: int = 512):
+    def __init__(self, embedding_dim: int = 256, hidden_dim: list[int] = [1024, 512]):
         """
-        Description:
-        Creates a Siamese network using ResNet50 as the base model.
-        1. Input Dimension:
-                - The ResNet50 expects input images of size `(batch_size, 3, 224, 224)`
-                - 3 channels (RGB)
-                - 224x224 pixels (standard ResNet input size)
-
-            2. After ResNet backbone (before the fc layers):
-                - Shape: `(batch_size, 2048, 1, 1)`
-                - The 2048 comes from the final convolutional layer of ResNet50
-                - The 1x1 spatial dimensions are the result of the average pooling
-
-            3. After flattening:
-                - Shape: `(batch_size, 2048)`
-                - This flattened vector is fed into the fully connected layers
-
-            4. Fully Connected Layers:
-                - First FC layer: 2048 → 512
-                - ReLU activation maintains 512 dimensions
-                - Final FC layer: 512 → 128
-                - Final output shape: `(batch_size, 128)`
+        SiameseResNet model using a frozen ResNet50 backbone and a customizable fully connected head.
 
         Args:
             embedding_dim (int): Final embedding dimension (default: 128)
-            hidden_dim (int): Hidden layer dimension (default: 512)
+            hidden_dim (list[int]): List of hidden layer sizes (default: [1024, 512, 256])
         """
         super(SiameseResNet, self).__init__()
-        # Load pretrained ResNet50 with the latest weights
+
+        # Load pretrained ResNet50 backbone and remove the final FC layer
         self.resnet = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
-        # Remove the final fully connected layer
-        self.resnet = nn.Sequential(*list(self.resnet.children())[:-1])
-        # Freeze all ResNet layers
+        self.resnet = nn.Sequential(*list(self.resnet.children())[:-1])  # (B, 2048, 1, 1)
+
+        # Freeze ResNet backbone
         for param in self.resnet.parameters():
             param.requires_grad = False
 
-        self.fc = nn.Sequential(
-            nn.Linear(2048, hidden_dim),  # First fully connected layer
-            nn.ReLU(),  # Activation function
-            nn.Linear(hidden_dim, embedding_dim)  # Second fully connected layer
-        )
+        # Build fully connected layers dynamically
+        fc_layers = []
+        in_dim = 2048
+        for h_dim in hidden_dim:
+            fc_layers.append(nn.Linear(in_dim, h_dim))
+            fc_layers.append(nn.ReLU())
+            in_dim = h_dim
+        fc_layers.append(nn.Linear(in_dim, embedding_dim))  # Final layer to embedding_dim
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the network.
+        self.fc = nn.Sequential(*fc_layers)
 
-        Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, 3, 224, 224)
+    def forward(self, x):
+        x = self.resnet(x)  # Shape: (B, 2048, 1, 1)
+        x = x.view(x.size(0), -1)  # Flatten to (B, 2048)
+        x = self.fc(x)  # Final shape: (B, embedding_dim)
+        return x
 
-        Returns:
-            torch.Tensor: Output embedding of shape (batch_size, 128)
-        """
-        x = self.resnet(x)
-        x = torch.flatten(x, 1)  # Flatten all dimensions except batch
-        output = self.fc(x)
-        return output
 
     def compute_metrics(self,
                         outputs1: torch.Tensor,
@@ -160,18 +138,17 @@ class SiameseResNet(nn.Module):
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item()
+                pbar.set_postfix({
+                    'batch_loss': f'{train_loss:.6f}',
+                })
+                avg_val_loss = None
 
             avg_train_loss = train_loss / len(train_loader)
             train_loss_history.append(avg_train_loss)
 
-            avg_val_loss = None
-            val_accuracy = None
-
             if val_loader is not None:
                 self.eval()
                 val_loss = 0.0
-                all_outputs = []
-                all_labels = []
 
                 with torch.no_grad():
                     for imgs, labels in val_loader:
@@ -180,16 +157,6 @@ class SiameseResNet(nn.Module):
                         loss = criterion(embeddings, labels)
                         val_loss += loss.item()
 
-                        # Compute metrics using embeddings
-                        if hasattr(self, 'compute_metrics'):
-                            # Create dummy pairwise inputs: embeddings1 and embeddings2
-                            half = embeddings.size(0) // 2
-                            if half > 0:
-                                out1 = embeddings[:half]
-                                out2 = embeddings[half:2*half]
-                                lbls = labels[:half]
-                                metrics = self.compute_metrics(out1, out2, lbls)
-                                val_accuracy = metrics['accuracy']
 
                 avg_val_loss = val_loss / len(val_loader)
                 val_loss_history.append(avg_val_loss)
@@ -201,8 +168,7 @@ class SiameseResNet(nn.Module):
             # Set progress bar postfix
             pbar.set_postfix({
                 'train_loss': f'{avg_train_loss:.6f}',
-                'val_loss': f'{avg_val_loss:.6f}' if avg_val_loss is not None else 'N/A',
-                'val_acc': f'{val_accuracy:.4f}' if val_accuracy is not None else 'N/A'
+                'val_loss': f'{avg_val_loss:.6f}' if avg_val_loss is not None else 'N/A'
             })
 
             if early_stopping.early_stop:
