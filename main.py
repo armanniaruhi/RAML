@@ -28,6 +28,8 @@ WEIGHT_DECAY = TRAIN["weight_decay"]
 NUM_EPOCHS = TRAIN["num_epochs"]
 PATIENCE = TRAIN["patience"]
 LOSS_TYPE = TRAIN["loss_type"]
+HIDDEN_DIM = TRAIN["hidden_dimension"]
+EMBEDDING_DIM = TRAIN["embedding_dimension"]
 
 def main(mode):
     # Load datasets
@@ -56,7 +58,7 @@ def main(mode):
 
 
     elif mode == "train":
-        model = SiameseResNet().to(DEVICE)
+        model = SiameseResNet(embedding_dim=EMBEDDING_DIM, hidden_dim=HIDDEN_DIM).to(DEVICE)
         optimizer = torch.optim.AdamW(
             model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY
         )
