@@ -1,14 +1,16 @@
 PREPROCESSING:
+  # Input file
   image_dir: data/celeba/img_align_celeba
   label_file: data/celeba/identity_CelebA.txt
   partition_file: data/celeba/list_eval_partition.csv
-  batch_size: 16
+  # Data Loader settings
+  batch_size: 128
   m_per_sample: 16
 
 TRAINING:
   # Optimizer
-  lr: 0.001
-  weight_decay: 0.01
+  lr: 0.01
+  weight_decay: 0.1
   # Training
   num_epochs: 10
   patience: 5
