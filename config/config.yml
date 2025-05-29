@@ -6,8 +6,14 @@ PREPROCESSING:
   m_per_sample: 16
 
 TRAINING:
+  # Optimizer
   lr: 0.001
   weight_decay: 0.01
+  # Training
   num_epochs: 10
   patience: 5
+  # Loss
   loss_type: contrastive
+  # Network
+  hidden_dimension: [1024,512]
+  embedding_dimension: 256
