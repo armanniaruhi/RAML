@@ -10,7 +10,7 @@ IMAGE_DIR = "data/celeba/img_align_celeba"
 LABEL_FILE = "data/celeba/identity_CelebA.txt"
 PARTITION_FILE = "data/celeba/list_eval_partition.csv"
 IMG_SIZE = 224
-BATCH_SIZE = 128
+BATCH_SIZE = 16
 M_PER_SAMPLE = 16
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

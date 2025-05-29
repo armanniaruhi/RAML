@@ -143,58 +143,67 @@ class SiameseResNet(nn.Module):
         self.to(device)
 
         early_stopping = EarlyStopping(patience=patience, verbose=True)
-        counter = []
         train_loss_history = []
         val_loss_history = []
 
-        for epoch in range(num_epochs):
+        pbar = tqdm.tqdm(range(num_epochs), desc="Training")
+
+        for epoch in pbar:
             self.train()
             train_loss = 0.0
-            train_n_batches = 0
 
-            pbar = tqdm.tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}")
-            for i, (imgs, labels) in enumerate(pbar):
+            for imgs, labels in train_loader:
                 imgs, labels = imgs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 embeddings = self(imgs)
                 loss = criterion(embeddings, labels)
                 loss.backward()
                 optimizer.step()
-
                 train_loss += loss.item()
-                train_n_batches += 1
-                pbar.set_postfix({
-                    'batch_loss': f'{loss.item():.8f}'
-                })
 
-            avg_loss = train_loss / train_n_batches
+            avg_train_loss = train_loss / len(train_loader)
+            train_loss_history.append(avg_train_loss)
 
-            pbar.set_postfix({
-                'train_loss': f'{avg_loss:.8f}'
-            })
+            avg_val_loss = None
+            val_accuracy = None
 
             if val_loader is not None:
                 self.eval()
                 val_loss = 0.0
-                val_n_batches = 0
+                all_outputs = []
+                all_labels = []
 
                 with torch.no_grad():
-                    for i, (imgs, labels) in enumerate(
-                            tqdm.tqdm(val_loader, desc=f"Epoch {epoch + 1}/{num_epochs} - Validation")):
+                    for imgs, labels in val_loader:
                         imgs, labels = imgs.to(device), labels.to(device)
                         embeddings = self(imgs)
                         loss = criterion(embeddings, labels)
-
                         val_loss += loss.item()
-                        val_n_batches += 1
 
-                avg_val_loss = val_loss / val_n_batches
+                        # Compute metrics using embeddings
+                        if hasattr(self, 'compute_metrics'):
+                            # Create dummy pairwise inputs: embeddings1 and embeddings2
+                            half = embeddings.size(0) // 2
+                            if half > 0:
+                                out1 = embeddings[:half]
+                                out2 = embeddings[half:2*half]
+                                lbls = labels[:half]
+                                metrics = self.compute_metrics(out1, out2, lbls)
+                                val_accuracy = metrics['accuracy']
+
+                avg_val_loss = val_loss / len(val_loader)
                 val_loss_history.append(avg_val_loss)
 
-                print(f"Epoch {epoch} - Training Loss: {avg_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
                 early_stopping(avg_val_loss, self)
             else:
-                early_stopping(avg_loss, self)
+                early_stopping(avg_train_loss, self)
+
+            # Set progress bar postfix
+            pbar.set_postfix({
+                'train_loss': f'{avg_train_loss:.6f}',
+                'val_loss': f'{avg_val_loss:.6f}' if avg_val_loss is not None else 'N/A',
+                'val_acc': f'{val_accuracy:.4f}' if val_accuracy is not None else 'N/A'
+            })
 
             if early_stopping.early_stop:
                 print("Early stopping triggered")
@@ -206,5 +215,4 @@ class SiameseResNet(nn.Module):
         return {
             'train_loss_history': train_loss_history,
             'val_loss_history': val_loss_history,
-            'counter': counter
         }
