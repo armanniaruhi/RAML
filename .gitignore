@@ -1,6 +1,6 @@
 # Ignored formats
 *.pyc
-*.gitignore
+*.pth
 *.db
 
 # Ignored directories

@@ -130,7 +130,7 @@ class SiameseResNet(nn.Module):
             self.train()
             train_loss = 0.0
 
-            for imgs, labels in train_loader:
+            for idx, (imgs, labels) in enumerate(train_loader):
                 imgs, labels = imgs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 embeddings = self(imgs)
@@ -139,7 +139,8 @@ class SiameseResNet(nn.Module):
                 optimizer.step()
                 train_loss += loss.item()
                 pbar.set_postfix({
-                    'batch_loss': f'{train_loss:.6f}',
+                    'batch idx': f'{idx + 1}/{len(train_loader)}',
+                    'batch_loss': f'{train_loss/(idx + 1):.6f}',
                 })
                 avg_val_loss = None
 
