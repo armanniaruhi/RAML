@@ -140,6 +140,8 @@ class SiameseResNet(nn.Module):
         if criterion is None:
             raise ValueError("Criterion (loss function) must be provided")
 
+        self.to(device)
+
         early_stopping = EarlyStopping(patience=patience, verbose=True)
         counter = []
         train_loss_history = []
@@ -161,10 +163,9 @@ class SiameseResNet(nn.Module):
 
                 train_loss += loss.item()
                 train_n_batches += 1
-                if i % 10 == 0:
-                    pbar.set_postfix({
-                        'batch_loss': f'{loss.item():.8f}'
-                    })
+                pbar.set_postfix({
+                    'batch_loss': f'{loss.item():.8f}'
+                })
 
             avg_loss = train_loss / train_n_batches
 
@@ -190,7 +191,7 @@ class SiameseResNet(nn.Module):
                 avg_val_loss = val_loss / val_n_batches
                 val_loss_history.append(avg_val_loss)
 
-                print(f"Epoch {epoch} - Training Loss: {avg_val_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
+                print(f"Epoch {epoch} - Training Loss: {avg_loss:.8f}, Validation Loss: {avg_val_loss:.8f}")
                 early_stopping(avg_val_loss, self)
             else:
                 early_stopping(avg_loss, self)

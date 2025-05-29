@@ -3,50 +3,59 @@ from optuna.samplers import TPESampler
 from src.ml.resNet50 import SiameseResNet
 import torch
 
+from pytorch_metric_learning.losses import ContrastiveLoss
+from pytorch_metric_learning.losses import MarginLoss
+from pytorch_metric_learning.losses import MultiSimilarityLoss
+from pytorch_metric_learning.losses import HistogramLoss
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-def objective(trial, criterion, train_loader, val_loader):
+def objective(trial, train_loader, val_loader, criterion):
     # Define the hyperparameter search space
     learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-2, log=True)
     weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True)
-    margin = trial.suggest_float('margin', 0.5, 10.0)
 
     # Initialize model fresh for each trial to avoid parameter leakage
     model = SiameseResNet().to(device)
 
-    
+    if criterion == "contrastive":
+        loss_func = ContrastiveLoss()
+    elif criterion == "ms":
+        alpha = trial.suggest_int('alpha', 1, 10, log=True)
+        beta = trial.suggest_int("beta", 20, 80)
+        base = trial.suggest_float('base', 0.1, 1.0, log=True)
+        loss_func = MultiSimilarityLoss(alpha=alpha, beta=beta, base=base)
+
     optimizer = torch.optim.AdamW(model.parameters(),
                                      lr=learning_rate,
                                      weight_decay=weight_decay)
 
-    results = model.train_model_constructive(
+    results = model.train_model(
         train_loader=train_loader,
         val_loader=val_loader,
-        criterion=ContrastiveLoss(margin=margin),
-        optimizer=optimizer,  # Pass the created optimizer
-        num_epochs=5,
+        criterion=loss_func,
+        optimizer=optimizer,
+        num_epochs=10,
         device=device,
         patience=2,
         experiment_name='SiameseResNet',
         tuning_mode=True
     )
 
-    return results['val_loss']
+    return results['val_loss_history'][-1]
 
 
-def run_optuna_study(train_loader, val_loader, n_trials=50, study_name="siamese_study"):
+def run_optuna_study(train_loader, val_loader, n_trials=50, study_name="siamese_study", criterion:str = "contrastive"):
     # Create a study with TPE sampler
-    sampler = TPESampler(seed=42)
     study = optuna.create_study(
         study_name=study_name,
         direction='minimize',  # We want to minimize validation loss
-        sampler=sampler,
         storage=f"sqlite:///{study_name}.db",  # Save results to SQLite DB
         load_if_exists=True
     )
 
     # Wrap the objective with lambda to pass additional arguments
     study.optimize(
-        lambda trial: objective(trial, train_loader, val_loader),
+        lambda trial: objective(trial, train_loader, val_loader, criterion=criterion),
         n_trials=n_trials,
         show_progress_bar=True
     )
