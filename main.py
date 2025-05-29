@@ -1,19 +1,33 @@
 import torch
+import yaml
 import argparse
 from src.preprocessing.dataLoader_CelebA import get_partitioned_dataloaders, create_subset_loader
 from src.ml.resNet50 import SiameseResNet
 from src.ml.hyperparam_study import run_optuna_study
 from pytorch_metric_learning.losses import ContrastiveLoss, MarginLoss, MultiSimilarityLoss, HistogramLoss
 
-# Constants
-IMAGE_DIR = "data/celeba/img_align_celeba"
-LABEL_FILE = "data/celeba/identity_CelebA.txt"
-PARTITION_FILE = "data/celeba/list_eval_partition.csv"
-IMG_SIZE = 224
-BATCH_SIZE = 16
-M_PER_SAMPLE = 16
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Load config from YAML
+with open("config/config.yml", "r") as f:
+    config = yaml.safe_load(f)
 
+# Extract sections
+PRE = config["PREPROCESSING"]
+TRAIN = config["TRAINING"]
+
+# Set constants from preprocessing config
+IMAGE_DIR = PRE["image_dir"]
+LABEL_FILE = PRE["label_file"]
+PARTITION_FILE = PRE["partition_file"]
+BATCH_SIZE = PRE["batch_size"]
+M_PER_SAMPLE = PRE["m_per_sample"]
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Set constants from training config
+LR = TRAIN["lr"]
+WEIGHT_DECAY = TRAIN["weight_decay"]
+NUM_EPOCHS = TRAIN["num_epochs"]
+PATIENCE = TRAIN["patience"]
+LOSS_TYPE = TRAIN["loss_type"]
 
 def main(mode):
     # Load datasets
@@ -40,19 +54,36 @@ def main(mode):
         print("Best hyperparameters found:")
         print(study.best_params)
 
+
     elif mode == "train":
         model = SiameseResNet().to(DEVICE)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2)
-        contrastive_loss = ContrastiveLoss(neg_margin=1.0, pos_margin=0)
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY
+        )
+
+        if LOSS_TYPE == "contrastive":
+            loss_fn = ContrastiveLoss(neg_margin=1.0, pos_margin=0)
+
+        elif LOSS_TYPE == "histogram":
+            loss_fn = HistogramLoss()
+
+        elif LOSS_TYPE == "margin":
+            loss_fn = MarginLoss()
+
+        elif LOSS_TYPE == "multisimilarity":
+            loss_fn = MultiSimilarityLoss()
+
+        else:
+            raise ValueError(f"Unsupported loss type: {LOSS_TYPE}")
 
         results = model.train_model(
             train_loader=train_loader,
             val_loader=val_loader,
-            criterion=contrastive_loss,
+            criterion=loss_fn,
             optimizer=optimizer,
-            num_epochs=10,
+            num_epochs=NUM_EPOCHS,
             device=DEVICE,
-            patience=5,
+            patience=PATIENCE,
             experiment_name='SiameseResNet',
             tuning_mode=False
         )
