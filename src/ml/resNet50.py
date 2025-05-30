@@ -160,6 +160,7 @@ class SiameseResNet(nn.Module):
                 train_loss += loss.item()
                 pbar.set_postfix({
                     'batch progress': f'{idx + 1}/{len(train_loader)}',
+                    'batch loss': f'{train_loss/(idx + 1)}',
                     'lr': optimizer.param_groups[0]['lr']  # Show current learning rate
                 })
 
