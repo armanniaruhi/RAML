@@ -24,6 +24,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Set constants from training config
 LR = TRAIN["lr"]
+SCHEDULING = TRAIN["scheduling"]
 WEIGHT_DECAY = TRAIN["weight_decay"]
 NUM_EPOCHS = TRAIN["num_epochs"]
 PATIENCE = TRAIN["patience"]
@@ -78,7 +79,7 @@ def main(mode):
         else:
             raise ValueError(f"Unsupported loss type: {LOSS_TYPE}")
 
-        results = model.train_model(
+        model.train_model(
             train_loader=train_loader,
             val_loader=val_loader,
             criterion=loss_fn,
@@ -87,7 +88,8 @@ def main(mode):
             device=DEVICE,
             patience=PATIENCE,
             experiment_name='SiameseResNet',
-            tuning_mode=False
+            scheduler_type=SCHEDULING,
+            save_path="model_v1"
         )
 
         print("Training complete.")
@@ -97,9 +99,9 @@ def main(mode):
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--mode", required=True, choices=["study", "train"], help="Run mode: 'study' or 'train'")
-    # args = parser.parse_args()
-    input = "train"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", required=True, choices=["study", "train"], help="Run mode: 'study' or 'train'")
+    args = parser.parse_args()
     # Pass the mode to main() function
-    main(input)
+    main(args.mode)
+    # TO RUN -> python3 main.py --mode train

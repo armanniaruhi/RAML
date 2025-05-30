@@ -6,6 +6,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
 from typing import Dict, Optional, Tuple
 import tqdm
 from src.ml.model_utils import EarlyStopping
+from pytorch_metric_learning.miners import PairMarginMiner
 
 class SiameseResNet(nn.Module):
     def __init__(self, embedding_dim: int = 256, hidden_dim: list[int] = [1024, 512]):
@@ -94,33 +95,44 @@ class SiameseResNet(nn.Module):
                     optimizer: Optional[torch.optim.Optimizer] = None,
                     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
                     experiment_name: str = 'SiameseResNet',
-                    tuning_mode: bool = True,
-                    patience: int = 7
-                    ) -> Dict[str, list]:
-        """Train the Siamese network.
-
-        Args:
-            train_loader: DataLoader for training data
-            val_loader: Optional DataLoader for validation data
-            criterion: Loss function
-            num_epochs: Number of training epochs
-            optimizer: Optimization algorithm
-            device: Device to train on (cuda or cpu)
-            experiment_name: Name for tracking
-            tuning_mode: Whether in hyperparameter tuning mode
-            patience: Patience for early stopping
-
-        Returns:
-            Dictionary containing training history
-        """
+                    patience: int = 7,
+                    scheduler_type: str = 'reduce_on_plateau',  # New: scheduler selection
+                    save_path: str = 'best_model.pth') -> Dict[str, list]:
+        
+        # Initialize optimizer (now with AdamW as default)
         if optimizer is None:
-            optimizer = torch.optim.Adam(self.parameters())
-
+            optimizer = torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=1e-4)
+        
         if criterion is None:
             raise ValueError("Criterion (loss function) must be provided")
 
-        self.to(device)
+        # Initialize scheduler based on type
+        if scheduler_type == 'reduce_on_plateau':
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.1, 
+                patience=3, 
+                verbose=True
+            )
+        elif scheduler_type == 'cosine':
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=num_epochs,
+                eta_min=1e-6,
+                last_epoch=-1
+            )
+        elif scheduler_type == 'onecycle':
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=1e-3,
+                steps_per_epoch=len(train_loader),
+                epochs=num_epochs
+            )
+        else:
+            scheduler = None
 
+        self.to(device)
         early_stopping = EarlyStopping(patience=patience, verbose=True)
         train_loss_history = []
         val_loss_history = []
@@ -135,23 +147,29 @@ class SiameseResNet(nn.Module):
                 imgs, labels = imgs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 embeddings = self(imgs)
-                loss = criterion(embeddings, labels)
+                miner = PairMarginMiner(pos_margin=0.2, neg_margin=0.8)
+                hard_pairs = miner(embeddings, labels)
+                loss = criterion(embeddings, labels, hard_pairs)
                 loss.backward()
                 optimizer.step()
+                
+                # Step per batch for OneCycleLR
+                if scheduler_type == 'onecycle':
+                    scheduler.step()
+                
                 train_loss += loss.item()
                 pbar.set_postfix({
-                    'batch idx': f'{idx + 1}/{len(train_loader)}',
-                    'batch_loss': f'{train_loss/(idx + 1):.6f}',
+                    'batch progress': f'{idx + 1}/{len(train_loader)}',
+                    'lr': optimizer.param_groups[0]['lr']  # Show current learning rate
                 })
-                avg_val_loss = None
 
             avg_train_loss = train_loss / len(train_loader)
             train_loss_history.append(avg_train_loss)
 
+            # Validation phase
             if val_loader is not None:
                 self.eval()
                 val_loss = 0.0
-
                 with torch.no_grad():
                     for imgs, labels in val_loader:
                         imgs, labels = imgs.to(device), labels.to(device)
@@ -159,18 +177,25 @@ class SiameseResNet(nn.Module):
                         loss = criterion(embeddings, labels)
                         val_loss += loss.item()
 
-
                 avg_val_loss = val_loss / len(val_loader)
                 val_loss_history.append(avg_val_loss)
-
+                
+                # Step scheduler based on validation loss
+                if scheduler_type == 'reduce_on_plateau':
+                    scheduler.step(avg_val_loss)
+                elif scheduler_type == 'cosine':
+                    scheduler.step()
+                    
                 early_stopping(avg_val_loss, self)
             else:
+                if scheduler_type == 'cosine':
+                    scheduler.step()
                 early_stopping(avg_train_loss, self)
 
-            # Set progress bar postfix
             pbar.set_postfix({
                 'train_loss': f'{avg_train_loss:.6f}',
-                'val_loss': f'{avg_val_loss:.6f}' if avg_val_loss is not None else 'N/A'
+                'val_loss': f'{avg_val_loss:.6f}' if val_loader else 'N/A',
+                'lr': optimizer.param_groups[0]['lr']
             })
 
             if early_stopping.early_stop:
@@ -179,6 +204,13 @@ class SiameseResNet(nn.Module):
 
         if early_stopping.best_model_state is not None:
             self.load_state_dict(early_stopping.best_model_state)
+            
+        # Save the best model at the end of training
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, save_path)
+        print(f"Model saved to {save_path}")
 
         return {
             'train_loss_history': train_loss_history,
