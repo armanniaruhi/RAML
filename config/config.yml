@@ -4,18 +4,19 @@ PREPROCESSING:
   label_file: data/celeba/identity_CelebA.txt
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
-  batch_size: 16
+  batch_size: 128
   m_per_sample: 8
 
 TRAINING:
   # Optimizer
-  lr: 0.01
+  lr: 0.1
   weight_decay: 0.1
+  scheduling: cosine  # Options: onecycle - reduce_on_plateau - cosine
   # Training
   num_epochs: 10
   patience: 5
   # Loss
-  loss_type: contrastive
+  loss_type: contrastive  # Options: contrastive - multisimilarity - histogram - margin
   # Network
   hidden_dimension: [512,256]
   embedding_dimension: 128
