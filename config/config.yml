@@ -5,7 +5,7 @@ PREPROCESSING:
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
   batch_size: 16
-  m_per_sample: 2
+  m_per_sample: 8
 
 TRAINING:
   # Optimizer
@@ -17,5 +17,5 @@ TRAINING:
   # Loss
   loss_type: contrastive
   # Network
-  hidden_dimension: [1024,512]
-  embedding_dimension: 256
+  hidden_dimension: [512,256]
+  embedding_dimension: 128
