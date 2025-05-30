@@ -10,18 +10,12 @@ from pytorch_metric_learning.losses import HistogramLoss
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def objective(trial, train_loader, val_loader, criterion):
-    embedding_dim = trial.suggest_categorical("embedding_dim", [64, 128, 256])
-    hidden_dims = trial.suggest_categorical("hidden_dims", [
-    (1024, 512), 
-    (1024, 512, 256),  
-    (512, 256)
-    ])
 
-    lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
+    lr = trial.suggest_float("lr", 1e-7, 1e-2, log=True)
     optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "SGD", "AdamW"])
 
     # Initialize model
-    model = SiameseResNet(embedding_dim=embedding_dim, hidden_dim=hidden_dims)
+    model = SiameseResNet()
     momentum = None
 
     if criterion == "contrastive":
@@ -32,19 +26,11 @@ def objective(trial, train_loader, val_loader, criterion):
         base = trial.suggest_float('base', 0.1, 1.0, log=True)
         loss_func = MultiSimilarityLoss(alpha=alpha, beta=beta, base=base)
 
-    # Select optimizer
-    if optimizer_name == "Adam":
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    elif optimizer_name == "SGD":
-        momentum = trial.suggest_float("momentum", 0.5, 0.99)
-        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     elif optimizer_name == "AdamW":
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     # Print current trial config and result
     print("\n==== Trial Summary ====")
-    print(f"Embedding Dim: {embedding_dim}")
-    print(f"Hidden Dims: {hidden_dims}")
     print(f"Optimizer: {optimizer_name}")
     print(f"Learning Rate: {lr:.6f}")
     if momentum:
@@ -58,7 +44,7 @@ def objective(trial, train_loader, val_loader, criterion):
         optimizer=optimizer,
         num_epochs=10,
         device=device,
-        patience=2,
+        patience=3,
         experiment_name='SiameseResNet',
         tuning_mode=True
     )
