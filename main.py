@@ -41,7 +41,7 @@ def main(mode):
         partition_file=PARTITION_FILE,
         batch_size=BATCH_SIZE
     )
-
+    
     if mode == "study":
         train_loader_study = create_subset_loader(train_loader, 50000)
         val_loader_study = create_subset_loader(train_loader, 8000)
