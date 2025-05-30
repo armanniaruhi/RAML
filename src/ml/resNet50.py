@@ -136,7 +136,7 @@ class SiameseResNet(nn.Module):
         early_stopping = EarlyStopping(patience=patience, verbose=True)
         train_loss_history = []
         val_loss_history = []
-
+        val_accuracy_history = []
         pbar = tqdm.tqdm(range(num_epochs), desc="Training")
 
         for epoch in pbar:
@@ -170,6 +170,7 @@ class SiameseResNet(nn.Module):
             if val_loader is not None:
                 self.eval()
                 val_loss = 0.0
+                val_acc = 0.0
                 with torch.no_grad():
                     for imgs, labels in val_loader:
                         imgs, labels = imgs.to(device), labels.to(device)
@@ -177,15 +178,19 @@ class SiameseResNet(nn.Module):
                         loss = criterion(embeddings, labels)
                         val_loss += loss.item()
 
+                        acc = self.calculate_pairwise_accuracy(embeddings, labels)
+                        val_acc += acc
+
                 avg_val_loss = val_loss / len(val_loader)
+                avg_val_acc = val_acc / len(val_loader)
                 val_loss_history.append(avg_val_loss)
-                
-                # Step scheduler based on validation loss
+                val_accuracy_history.append(avg_val_acc)
+
                 if scheduler_type == 'reduce_on_plateau':
                     scheduler.step(avg_val_loss)
                 elif scheduler_type == 'cosine':
                     scheduler.step()
-                    
+
                 early_stopping(avg_val_loss, self)
             else:
                 if scheduler_type == 'cosine':
@@ -195,6 +200,7 @@ class SiameseResNet(nn.Module):
             pbar.set_postfix({
                 'train_loss': f'{avg_train_loss:.6f}',
                 'val_loss': f'{avg_val_loss:.6f}' if val_loader else 'N/A',
+                'val_acc': f'{avg_val_acc:.4f}' if val_loader else 'N/A',
                 'lr': optimizer.param_groups[0]['lr']
             })
 
@@ -204,8 +210,7 @@ class SiameseResNet(nn.Module):
 
         if early_stopping.best_model_state is not None:
             self.load_state_dict(early_stopping.best_model_state)
-            
-        # Save the best model at the end of training
+
         torch.save({
             'model_state_dict': self.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -215,4 +220,22 @@ class SiameseResNet(nn.Module):
         return {
             'train_loss_history': train_loss_history,
             'val_loss_history': val_loss_history,
+            'val_accuracy_history': val_accuracy_history
         }
+        
+        
+    def calculate_pairwise_accuracy(embeddings, labels, threshold=0.5):
+        # Calculate pairwise distances
+        cos = nn.CosineSimilarity(dim=1)
+        total = 0
+        correct = 0
+        for i in range(0, len(embeddings), 2):
+            if i + 1 >= len(embeddings): break
+            emb1, emb2 = embeddings[i], embeddings[i + 1]
+            label1, label2 = labels[i], labels[i + 1]
+            sim = cos(emb1.unsqueeze(0), emb2.unsqueeze(0)).item()
+            pred_similar = sim > threshold
+            true_similar = label1 == label2
+            correct += (pred_similar == true_similar)
+            total += 1
+        return correct / total if total > 0 else 0
