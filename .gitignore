@@ -2,6 +2,7 @@
 *.pyc
 *.pth
 *.db
+*.html
 
 # Ignored directories
 /data/
