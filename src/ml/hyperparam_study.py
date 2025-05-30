@@ -12,11 +12,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def objective(trial, train_loader, val_loader, criterion):
 
     lr = trial.suggest_float("lr", 1e-7, 1e-2, log=True)
-    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "SGD", "AdamW"])
-
-    # Initialize model
     model = SiameseResNet()
-    momentum = None
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    # Initialize model
 
     if criterion == "contrastive":
         loss_func = ContrastiveLoss()
@@ -26,15 +24,10 @@ def objective(trial, train_loader, val_loader, criterion):
         base = trial.suggest_float('base', 0.1, 1.0, log=True)
         loss_func = MultiSimilarityLoss(alpha=alpha, beta=beta, base=base)
 
-    elif optimizer_name == "AdamW":
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     # Print current trial config and result
     print("\n==== Trial Summary ====")
-    print(f"Optimizer: {optimizer_name}")
     print(f"Learning Rate: {lr:.6f}")
-    if momentum:
-        print(f"Momentum: {momentum:.2f}")
 
     # Train
     results = model.train_model(
@@ -46,7 +39,7 @@ def objective(trial, train_loader, val_loader, criterion):
         device=device,
         patience=3,
         experiment_name='SiameseResNet',
-        tuning_mode=True
+        scheduler_type="cosine"
     )
 
     objective_result = results['val_loss_history'][-1]
