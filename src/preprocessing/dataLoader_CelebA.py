@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 import torch
 from pytorch_metric_learning.samplers import MPerClassSampler
+import random
 
 
 def _load_partitions(partition_file):
@@ -22,19 +23,22 @@ def _load_partitions(partition_file):
 
 
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, img_size=64, transform=None,
-                 partition_file=None, partition_id=None):
+    def __init__(self, image_dir, label_file, transform=None,
+                 partition_file=None, partition_id=None, output_format='triplet'):
         """
-        Args:
+        Args:class CelebALabeledDataset(Dataset):
+
             image_dir (str): Path to image directory
             label_file (str): Path to label file
             img_size (int): Target image size
             transform (callable): Optional transforms
             partition_file (str): Path to partition file
             partition_id (int): 0=train, 1=val, 2=test
+            output_format (str): 'triplet' or 'siamese' (5-tuple)
         """
         self.image_dir = image_dir
         self.label_map = self._load_labels(label_file)
+        self.output_format = output_format
 
         # Load partition information
         if partition_file and partition_id is not None:
@@ -50,6 +54,10 @@ class CelebALabeledDataset(Dataset):
         # Store labels as list for sampler access
         self.labels = [self.label_map[img_file] for img_file in self.image_files]
         self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
+        self.label_to_indices = {label: [] for label in self.unique_labels}
+        
+        for idx, label in enumerate(self.labels):
+            self.label_to_indices[label].append(idx)
 
         # Default transforms if none provided
         if transform is None:
@@ -78,14 +86,75 @@ class CelebALabeledDataset(Dataset):
         return len(self.image_files)
 
     def __getitem__(self, idx):
+        if self.output_format == 'triplet':
+            return self._get_triplet_item(idx)
+        else:  # siamese (5-tuple)
+            return self._get_siamese_item(idx)
+
+    def _get_triplet_item(self, idx):
+        """Return anchor, positive, negative images for triplet loss"""
+        anchor_img, anchor_label = self._load_single_item(idx)
+        
+        # Find positive sample
+        positive_idx = idx
+        while positive_idx == idx:  # Ensure different image
+            positive_idx = random.choice(self.label_to_indices[anchor_label])
+        positive_img, _ = self._load_single_item(positive_idx)
+        
+        # Find negative sample
+        negative_label = random.choice([l for l in self.unique_labels if l != anchor_label])
+        negative_idx = random.choice(self.label_to_indices[negative_label])
+        negative_img, _ = self._load_single_item(negative_idx)
+        
+        return anchor_img, positive_img, negative_img, anchor_label
+
+    def _get_siamese_item(self, idx):
+        """Return img1, img2, similarity, label1, label2 (5-tuple)"""
+        img0_tuple = (os.path.join(self.image_dir, self.image_files[idx]), self.labels[idx])
+        
+        # 50% chance to get same class
+        should_get_same_class = random.randint(0, 1)
+        
+        if should_get_same_class:
+            while True:
+                # Find same class image
+                img1_idx = random.choice(range(len(self.image_files)))
+                if self.labels[img1_idx] == img0_tuple[1] and img1_idx != idx:
+                    break
+        else:
+            while True:
+                # Find different class image
+                img1_idx = random.choice(range(len(self.image_files)))
+                if self.labels[img1_idx] != img0_tuple[1]:
+                    break
+        
+        img1_tuple = (os.path.join(self.image_dir, self.image_files[img1_idx]), self.labels[img1_idx])
+        
+        img0 = Image.open(img0_tuple[0]).convert('RGB')
+        img1 = Image.open(img1_tuple[0]).convert('RGB')
+        
+        if self.transform:
+            img0 = self.transform(img0)
+            img1 = self.transform(img1)
+            
+        return (
+            img0, 
+            img1, 
+            torch.tensor([int(img0_tuple[1] != img1_tuple[1])], dtype=torch.float32),
+            img0_tuple[1],
+            img1_tuple[1]
+        )
+
+    def _load_single_item(self, idx):
+        """Helper to load a single image and label"""
         filename = self.image_files[idx]
         label = self.label_map[filename]
         img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
-
+        
         if self.transform:
             img = self.transform(img)
+            
         return img, label
-
 
 def get_dataloader(image_dir, label_file, batch_size=32, m_per_sample=2):
     """
@@ -114,7 +183,7 @@ def get_dataloader(image_dir, label_file, batch_size=32, m_per_sample=2):
     )
 
 
-def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, m_per_sample=2):
+def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, m_per_sample=2, output_format = "None"):
     """
     Creates train/val/test dataloaders with proper sampling for contrastive learning.
     Args:
@@ -127,15 +196,16 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
         Tuple of (train_loader, val_loader, test_loader)
     """
 
-    train_dataset = CelebALabeledDataset( image_dir, label_file,
-        partition_file=partition_file, partition_id=0)
+    train_dataset = CelebALabeledDataset( 
+        image_dir, label_file,
+        partition_file=partition_file, partition_id=0, output_format = output_format)
     val_dataset = CelebALabeledDataset(
         image_dir, label_file,
-        partition_file=partition_file, partition_id=1
+        partition_file=partition_file, partition_id=1, output_format = output_format
     )
     test_dataset = CelebALabeledDataset(
         image_dir, label_file,
-        partition_file=partition_file, partition_id=2
+        partition_file=partition_file, partition_id=2, output_format = output_format
     )
 
     train_sampler = MPerClassSampler(

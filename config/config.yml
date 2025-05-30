@@ -4,8 +4,8 @@ PREPROCESSING:
   label_file: data/celeba/identity_CelebA.txt
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
-  batch_size: 128
-  m_per_sample: 8
+  batch_size: 16
+  m_per_sample: 16
 
 TRAINING:
   # Optimizer
