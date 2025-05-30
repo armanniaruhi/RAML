@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, roc_curve, roc_auc_score)
 from typing import Dict, Optional, Tuple
@@ -19,7 +19,7 @@ class SiameseResNet(nn.Module):
         super(SiameseResNet, self).__init__()
 
         # Load pretrained ResNet50 backbone and remove the final FC layer
-        self.resnet = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+        self.resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
         self.resnet = nn.Sequential(*list(self.resnet.children())[:-1])  # (B, 2048, 1, 1)
 
         # Freeze ResNet backbone
@@ -28,7 +28,8 @@ class SiameseResNet(nn.Module):
 
         # Build fully connected layers dynamically
         fc_layers = []
-        in_dim = 2048
+        in_dim = 2048   # Resnet50
+        in_dim = 512    # Resnet18
         for h_dim in hidden_dim:
             fc_layers.append(nn.Linear(in_dim, h_dim))
             fc_layers.append(nn.ReLU())

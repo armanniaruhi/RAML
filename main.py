@@ -97,9 +97,9 @@ def main(mode):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", required=True, choices=["study", "train"], help="Run mode: 'study' or 'train'")
-    args = parser.parse_args()
-
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--mode", required=True, choices=["study", "train"], help="Run mode: 'study' or 'train'")
+    # args = parser.parse_args()
+    input = "train"
     # Pass the mode to main() function
-    main(args.mode)
+    main(input)
