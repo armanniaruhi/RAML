@@ -1,13 +1,17 @@
 import torch
 import torch.nn as nn
-from torchvision.models import resnet18
+from torchvision.models import resnet18, ResNet18_Weights
 
 class SiameseNetwork(nn.Module):
     def __init__(self):
         super(SiameseNetwork, self).__init__()
         
         # Using ResNet18 as the backbone with 3-channel input
-        self.cnn1 = resnet18(pretrained=True)  # Using pretrained weights
+        self.cnn1 = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)  # Using pretrained weights
+
+        # Freeze ResNet backbone
+        for param in self.cnn1.parameters():
+            param.requires_grad = False
         
         # Remove the original fully connected layer of ResNet18
         self.cnn1.fc = nn.Identity()

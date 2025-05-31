@@ -1,6 +1,6 @@
 # Ignored formats
 *.pyc
-*.pth
+#*.pth
 *.db
 *.html
 
