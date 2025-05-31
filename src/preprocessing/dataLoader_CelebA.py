@@ -166,77 +166,105 @@ class CelebALabeledDataset(Dataset):
             
         return img, label
 
-def get_dataloader(image_dir, label_file, batch_size=32, m_per_sample=2):
-    """
-    Creates DataLoader for contrastive learning with guaranteed positive pairs.
-    Args:
-        image_dir: Directory containing images
-        label_file: Path to label file
-        batch_size: Batch size
-    Returns:
-        DataLoader with MPerClassSampler
-    """
-    dataset = CelebALabeledDataset(image_dir, label_file)
 
-    sampler = MPerClassSampler(
-        labels=dataset.labels,
-        m=m_per_sample,  # At least 2 samples per class per batch
-        batch_size=batch_size,
-        length_before_new_iter=len(dataset)
+def get_partitioned_dataloaders(
+    image_dir, label_file, partition_file,
+    batch_size=32, m_per_sample=2, 
+    num_identities=500, seed=42,
+    output_format="siamese"
+):
+    """
+    Creates train/val/test dataloaders from fixed-identity subsets with MPerClassSampler.
+    Labels are remapped from original labels to consecutive integers starting at 0.
+    """
+
+    # Load the full dataset for train partition (partition_id=0) to get all labels
+    full_dataset = CelebALabeledDataset(
+        image_dir, label_file,
+        partition_file=partition_file, partition_id=0,
+        output_format=output_format
     )
 
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        sampler=sampler,
-        drop_last=True
-    )
+    # Fix random seed for reproducibility
+    random.seed(seed)
+    torch.manual_seed(seed)
 
+    # Select fixed subset of unique identities/labels
+    all_labels = list(set(full_dataset.labels))
+    selected_labels = set(random.sample(all_labels, min(num_identities, len(all_labels))))
 
-def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_size=32, m_per_sample=2, output_format = "None"):
-    """
-    Creates train/val/test dataloaders with proper sampling for contrastive learning.
-    Args:
-        image_dir: Image directory
-        label_file: Label file path
-        partition_file: Partition file path
-        batch_size: Batch size
-        img_size: Image size
-    Returns:
-        Tuple of (train_loader, val_loader, test_loader)
-    """
+    # Filter image files and labels to only include selected labels
+    filtered_image_files = [
+        fname for fname, label in zip(full_dataset.image_files, full_dataset.labels)
+        if label in selected_labels
+    ]
 
-    train_dataset = CelebALabeledDataset( 
+    filtered_label_map = {
+        fname: full_dataset.label_map[fname]
+        for fname in filtered_image_files
+    }
+
+    # Get original labels in filtered data and create remapping
+    original_labels_filtered = [filtered_label_map[fname] for fname in filtered_image_files]
+    unique_filtered_labels = sorted(set(original_labels_filtered))
+    label_remap = {orig_label: new_label for new_label, orig_label in enumerate(unique_filtered_labels)}
+
+    # Remap the labels in the filtered_label_map
+    remapped_label_map = {fname: label_remap[label] for fname, label in filtered_label_map.items()}
+
+    # Define a filtered dataset class with remapped labels
+    class FilteredCelebADataset(CelebALabeledDataset):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.image_files = filtered_image_files
+            self.label_map = remapped_label_map
+            self.labels = [self.label_map[f] for f in self.image_files]
+            self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
+            self.label_to_indices = {label: [] for label in self.unique_labels}
+            for idx, label in enumerate(self.labels):
+                self.label_to_indices[label].append(idx)
+
+    # Create train dataset (partition_id=0) with filtered and remapped labels
+    train_dataset = FilteredCelebADataset(
         image_dir, label_file,
-        partition_file=partition_file, partition_id=0, output_format = output_format)
-    val_dataset = CelebALabeledDataset(
-        image_dir, label_file,
-        partition_file=partition_file, partition_id=1, output_format = output_format
-    )
-    test_dataset = CelebALabeledDataset(
-        image_dir, label_file,
-        partition_file=partition_file, partition_id=2, output_format = output_format
+        partition_file=partition_file, partition_id=0,
+        output_format=output_format
     )
 
     train_sampler = MPerClassSampler(
         labels=train_dataset.labels,
         m=m_per_sample,
         batch_size=batch_size,
-        length_before_new_iter=len(train_dataset))
-
-    val_sampler = MPerClassSampler(
-        labels=val_dataset.labels,
-        m=1,
-        batch_size=1,
-        length_before_new_iter=len(val_dataset)
+        length_before_new_iter=len(train_dataset)
     )
 
-    # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True,num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False,num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False,num_workers=0)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        sampler=train_sampler,
+        drop_last=True,
+        num_workers=0
+    )
+
+    # Create val dataset (partition_id=1) — no label filtering/remapping for val/test
+    val_dataset = CelebALabeledDataset(
+        image_dir, label_file,
+        partition_file=partition_file, partition_id=1,
+        output_format=output_format
+    )
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0)
+
+    # Create test dataset (partition_id=2)
+    test_dataset = CelebALabeledDataset(
+        image_dir, label_file,
+        partition_file=partition_file, partition_id=2,
+        output_format=output_format
+    )
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=0)
 
     return train_loader, val_loader, test_loader
+
+
 
 
 def create_subset_loader(original_loader, num_samples=1000):
