@@ -229,9 +229,9 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
     )
 
     # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True,num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False,num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, shuffle=False,num_workers=8)
 
     return train_loader, val_loader, test_loader
 

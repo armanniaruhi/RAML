@@ -5,7 +5,7 @@ PREPROCESSING:
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
   batch_size: 16
-  m_per_sample: 16
+  m_per_sample: 2
 
 TRAINING:
   # Optimizer
