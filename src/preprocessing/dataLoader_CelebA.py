@@ -5,6 +5,7 @@ from torchvision import transforms
 import torch
 from pytorch_metric_learning.samplers import MPerClassSampler
 import random
+from torch.utils.data import random_split, DataLoader
 
 
 def _load_partitions(partition_file):
@@ -225,18 +226,33 @@ def get_partitioned_dataloaders(
                 self.label_to_indices[label].append(idx)
 
     # Create train dataset (partition_id=0) with filtered and remapped labels
-    train_dataset = FilteredCelebADataset(
+    dataset = FilteredCelebADataset(
         image_dir, label_file,
         partition_file=partition_file, partition_id=0,
         output_format=output_format
     )
+    
+    
+    dataset_length = len(dataset)
+    train_size = int(0.7 * dataset_length)
+    val_size = int(0.15 * dataset_length)
+    test_size = dataset_length - train_size - val_size  # Ensure exact total
+
+    # Ensure reproducibility
+    seed = 42
+    generator = torch.Generator().manual_seed(seed)
+
+    # Split the dataset
+    train_dataset, val_dataset, test_dataset = random_split(
+        dataset, [train_size, val_size, test_size], generator=generator
+    )
 
     train_sampler = MPerClassSampler(
-        labels=train_dataset.labels,
-        m=m_per_sample,
-        batch_size=batch_size,
-        length_before_new_iter=len(train_dataset)
-    )
+    labels=[dataset.labels[i] for i in train_dataset.indices], 
+    m=m_per_sample,
+    batch_size=batch_size,
+    length_before_new_iter=len(train_dataset)
+)
 
     train_loader = DataLoader(
         train_dataset,
@@ -245,22 +261,9 @@ def get_partitioned_dataloaders(
         drop_last=True,
         num_workers=0
     )
-
-    # Create val dataset (partition_id=1) — no label filtering/remapping for val/test
-    val_dataset = CelebALabeledDataset(
-        image_dir, label_file,
-        partition_file=partition_file, partition_id=1,
-        output_format=output_format
-    )
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0)
-
-    # Create test dataset (partition_id=2)
-    test_dataset = CelebALabeledDataset(
-        image_dir, label_file,
-        partition_file=partition_file, partition_id=2,
-        output_format=output_format
-    )
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=0)
+    
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=train_sampler, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
 
     return train_loader, val_loader, test_loader
 
