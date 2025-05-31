@@ -16,7 +16,7 @@ TRAINING:
   num_epochs: 10
   patience: 5
   # Loss
-  loss_type: contrastive  # Options: contrastive - multisimilarity - histogram - margin
+  loss_type: arcface  # Options: contrastive - multisimilarity - arcface - margin
   # Network
   hidden_dimension: [512,256]
   embedding_dimension: 128
