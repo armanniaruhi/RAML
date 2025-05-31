@@ -4,8 +4,8 @@ PREPROCESSING:
   label_file: data/celeba/identity_CelebA.txt
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
-  batch_size: 32
-  m_per_sample: 2
+  batch_size: 64
+  m_per_sample: 4
 
 TRAINING:
   # Optimizer
@@ -16,7 +16,7 @@ TRAINING:
   num_epochs: 20
   patience: 5
   # Loss
-  loss_type: multisimilarity  # Options: contrastive - multisimilarity - arcface - margin
+  loss_type: contrastive  # Options: contrastive - multisimilarity - arcface - margin
   # Network
   hidden_dimension: [512,256]
   embedding_dimension: 128
