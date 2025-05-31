@@ -2,13 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 from PIL import Image
-import torchvision
-import torchvision.datasets as datasets
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Dataset
-import torchvision.utils
+from torch.utils.data import Dataset
 import torch
-
 
 class SiameseNetworkDataset(Dataset):
     def __init__(self, imageFolderDataset, transform=None):
@@ -36,10 +31,6 @@ class SiameseNetworkDataset(Dataset):
         img0 = Image.open(img0_tuple[0])
         img1 = Image.open(img1_tuple[0])
 
-        # Remove the .convert("L") to keep RGB channels
-        # img0 = img0.convert("L")  # REMOVED THIS LINE
-        # img1 = img1.convert("L")  # REMOVED THIS LINE
-
         # Convert to RGB if image is in another format (e.g., RGBA)
         if img0.mode != 'RGB':
             img0 = img0.convert('RGB')
@@ -50,7 +41,8 @@ class SiameseNetworkDataset(Dataset):
             img0 = self.transform(img0)
             img1 = self.transform(img1)
         
-        return img0, img1, torch.from_numpy(np.array([int(img1_tuple[1] != img0_tuple[1])], dtype=np.float32))
+        # Return the images, similarity label (0 or 1), and the original class labels
+        return img0, img1, torch.from_numpy(np.array([int(img1_tuple[1] != img0_tuple[1])], dtype=np.float32)), img0_tuple[1], img1_tuple[1]
     
     def __len__(self):
         return len(self.imageFolderDataset.imgs)

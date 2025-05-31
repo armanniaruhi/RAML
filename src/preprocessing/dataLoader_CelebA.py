@@ -216,22 +216,15 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
 
     val_sampler = MPerClassSampler(
         labels=val_dataset.labels,
-        m=m_per_sample,
-        batch_size=batch_size,
+        m=1,
+        batch_size=1,
         length_before_new_iter=len(val_dataset)
-    )
-
-    test_sampler = MPerClassSampler(
-        labels=test_dataset.labels,
-        m=m_per_sample,
-        batch_size=batch_size,
-        length_before_new_iter=len(test_dataset)
     )
 
     # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True,num_workers=8)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False,num_workers=8)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=test_sampler, shuffle=False,num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,num_workers=8)
 
     return train_loader, val_loader, test_loader
 
