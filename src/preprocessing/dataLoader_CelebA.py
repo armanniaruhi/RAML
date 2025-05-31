@@ -130,8 +130,13 @@ class CelebALabeledDataset(Dataset):
         
         img1_tuple = (os.path.join(self.image_dir, self.image_files[img1_idx]), self.labels[img1_idx])
         
-        img0 = Image.open(img0_tuple[0]).convert('RGB')
-        img1 = Image.open(img1_tuple[0]).convert('RGB')
+        try:
+            img0 = Image.open(img0_tuple[0]).convert('RGB')
+            img1 = Image.open(img1_tuple[0]).convert('RGB')
+        except Exception as e:
+            print(f"[Siamese] Fehler beim Öffnen von Bildern ({img0_tuple[0]} oder {img1_tuple[0]}): {e}")
+            return self.__getitem__((idx + 1) % len(self.image_files))
+
         
         if self.transform:
             img0 = self.transform(img0)
@@ -149,7 +154,12 @@ class CelebALabeledDataset(Dataset):
         """Helper to load a single image and label"""
         filename = self.image_files[idx]
         label = self.label_map[filename]
-        img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
+        try:
+            img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
+        except Exception as e:
+            print(f"[Triplet] Fehler beim Öffnen von {filename}: {e}")
+            return self._load_single_item((idx + 1) % len(self.image_files))
+
         
         if self.transform:
             img = self.transform(img)
@@ -222,8 +232,8 @@ def get_partitioned_dataloaders(image_dir, label_file, partition_file, batch_siz
     )
 
     # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True,num_workers=8)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False,num_workers=8)
+    train_loader = DataLoader(train_dataset, batch_size = batch_size, sampler = train_sampler, drop_last = True,num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, shuffle=False,num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False,num_workers=0)
 
     return train_loader, val_loader, test_loader
