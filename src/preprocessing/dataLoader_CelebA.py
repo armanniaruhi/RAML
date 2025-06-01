@@ -62,6 +62,7 @@ class CelebALabeledDataset(Dataset):
 
         # Default transforms if none provided
         if transform is None:
+            '''
             self.transform = transforms.Compose([
                 transforms.Resize([256, 256]),
                 transforms.CenterCrop(224),
@@ -69,6 +70,12 @@ class CelebALabeledDataset(Dataset):
                 transforms.Normalize([0.485, 0.456, 0.406],
                                      [0.229, 0.224, 0.225])
             ])
+            '''
+            self.transform = transforms.Compose([
+                    transforms.Resize([100, 100]),
+                    transforms.ToTensor()
+                ])
+
         else:
             self.transform = transform
 
@@ -132,8 +139,10 @@ class CelebALabeledDataset(Dataset):
         img1_tuple = (os.path.join(self.image_dir, self.image_files[img1_idx]), self.labels[img1_idx])
         
         try:
-            img0 = Image.open(img0_tuple[0]).convert('RGB')
-            img1 = Image.open(img1_tuple[0]).convert('RGB')
+            #img0 = Image.open(img0_tuple[0]).convert('RGB')
+            #img1 = Image.open(img1_tuple[0]).convert('RGB')
+            img0 = Image.open(img0_tuple[0]).convert('L')
+            img1 = Image.open(img1_tuple[0]).convert('L')
         except Exception as e:
             print(f"[Siamese] Fehler beim Öffnen von Bildern ({img0_tuple[0]} oder {img1_tuple[0]}): {e}")
             return self.__getitem__((idx + 1) % len(self.image_files))
@@ -156,7 +165,9 @@ class CelebALabeledDataset(Dataset):
         filename = self.image_files[idx]
         label = self.label_map[filename]
         try:
-            img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
+            #img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
+            img = Image.open(os.path.join(self.image_dir, filename)).convert('L')
+
         except Exception as e:
             print(f"[Triplet] Fehler beim Öffnen von {filename}: {e}")
             return self._load_single_item((idx + 1) % len(self.image_files))
@@ -232,14 +243,12 @@ def get_partitioned_dataloaders(
         output_format=output_format
     )
     
-    
     dataset_length = len(dataset)
     train_size = int(0.7 * dataset_length)
     val_size = int(0.15 * dataset_length)
     test_size = dataset_length - train_size - val_size  # Ensure exact total
 
     # Ensure reproducibility
-    seed = 42
     generator = torch.Generator().manual_seed(seed)
 
     # Split the dataset
@@ -247,12 +256,13 @@ def get_partitioned_dataloaders(
         dataset, [train_size, val_size, test_size], generator=generator
     )
 
+    # Create sampler only for training data
     train_sampler = MPerClassSampler(
-    labels=[dataset.labels[i] for i in train_dataset.indices], 
-    m=m_per_sample,
-    batch_size=batch_size,
-    length_before_new_iter=len(train_dataset)
-)
+        labels=[dataset.labels[i] for i in train_dataset.indices], 
+        m=m_per_sample,
+        batch_size=batch_size,
+        length_before_new_iter=len(train_dataset)
+    )
 
     train_loader = DataLoader(
         train_dataset,
@@ -262,8 +272,20 @@ def get_partitioned_dataloaders(
         num_workers=0
     )
     
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=train_sampler, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    # For validation and test, use sequential samplers
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,  # Important for evaluation
+        num_workers=0
+    )
+    
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=1,
+        shuffle=True,
+        num_workers=0
+    )
 
     return train_loader, val_loader, test_loader
 
