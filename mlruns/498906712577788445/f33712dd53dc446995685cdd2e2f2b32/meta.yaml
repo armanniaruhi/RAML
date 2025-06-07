@@ -1,0 +1,15 @@
+artifact_uri: /Users/soroureskandari/PycharmProjects/RAML/RAML25_5/mlruns/498906712577788445/f33712dd53dc446995685cdd2e2f2b32/artifacts
+end_time: 1749284135973
+entry_point_name: ''
+experiment_id: '498906712577788445'
+lifecycle_stage: active
+run_id: f33712dd53dc446995685cdd2e2f2b32
+run_name: multisimilarity_celebA
+run_uuid: f33712dd53dc446995685cdd2e2f2b32
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1749283923384
+status: 4
+tags: []
+user_id: soroureskandari
