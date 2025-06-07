@@ -6,35 +6,45 @@ class SiameseNetwork(nn.Module):
     def __init__(self):
         super(SiameseNetwork, self).__init__()
         
-        # Using ResNet18 as the backbone with 3-channel input
-        self.cnn1 = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)  # Using pretrained weights
-
-        # Freeze ResNet backbone
+        # Load ResNet18 with pretrained weights
+        self.cnn1 = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        
+        # Store the original first conv layer
+        original_first_conv = self.cnn1.conv1
+        
+        # Replace with a 1-channel input conv layer
+        self.cnn1.conv1 = nn.Conv2d(
+            1,  # Single channel input
+            original_first_conv.out_channels,
+            kernel_size=original_first_conv.kernel_size,
+            stride=original_first_conv.stride,
+            padding=original_first_conv.padding,
+            bias=original_first_conv.bias
+        )
+        
+        # Initialize weights by averaging RGB channels
+        with torch.no_grad():
+            self.cnn1.conv1.weight = nn.Parameter(original_first_conv.weight.mean(dim=1, keepdim=True))
+        
+        # Freeze the backbone
         for param in self.cnn1.parameters():
             param.requires_grad = False
         
-        # Remove the original fully connected layer of ResNet18
+        # Replace the FC layer with identity
         self.cnn1.fc = nn.Identity()
         
-        # Setting up your custom Fully Connected Layers
-        # ResNet18 outputs 512 features
+        # Custom head
         self.fc1 = nn.Sequential(
             nn.Linear(512, 1024),
             nn.ReLU(inplace=True),
             nn.Linear(1024, 256),
         )
-        
+    
     def forward_once(self, x):
-        # Forward pass through ResNet18
         output = self.cnn1(x)
-        # Flatten the output
         output = output.view(output.size()[0], -1)
-        # Forward pass through custom FC layers
         output = self.fc1(output)
         return output
     
     def forward(self, input1, input2):
-        # Forward pass for both inputs
-        output1 = self.forward_once(input1)
-        output2 = self.forward_once(input2)
-        return output1, output2
+        return self.forward_once(input1), self.forward_once(input2)
