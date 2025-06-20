@@ -26,7 +26,7 @@ MODES = ["ARCFACE_OWN"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
 
 def run_experiment(MODE):
     # Load configuration parameters from YAML file
-    with open("config/config.yml", "r") as f:
+    with open("config/config_optuna.yml", "r") as f:
         config = yaml.safe_load(f)
 
         # Extract relevant sections       
@@ -274,14 +274,57 @@ def run_experiment(MODE):
                 # Log model with input example so MLflow can infer the signature
                 mlflow.pytorch.log_model(net, "models/final_model", input_example=input_example)
 
+import optuna
 
+def objective(trial):
+    # Suggest ArcFace-specific hyperparameters
+    margin = trial.suggest_float("margin", 0.2, 0.6)
+    scale = trial.suggest_float("scale", 30, 64)
+    
+    # Suggest optimizer and training parameters
+    lr = trial.suggest_loguniform("lr", 1e-5, 1e-3)
+    weight_decay = trial.suggest_loguniform("weight_decay", 1e-6, 1e-3)
+    scheduling = trial.suggest_categorical("scheduling", [True, False])
+    patience = trial.suggest_int("patience", 7, 25) 
+    
+    # Save trial suggestions into YAML config before training
+    config = {
+        "PREPROCESSING" :{
+        "image_dir": "data/celeba/img_align_celeba",
+        "label_file": "data/celeba/identity_CelebA.txt",
+        "partition_file": "data/celeba/list_eval_partition.csv",
+        "batch_size": 64,
+        "m_per_sample": 2,
+        "image_size": 100}   
+,  # your preprocessing settings
+        "TRAINING_ARCFACE": {
+            "lr": lr,
+            "weight_decay": weight_decay,
+            "scheduling": scheduling,
+            "num_epochs": 100,
+            "patience": patience,
+            "margin": margin,
+            "scale": scale,
+            "embedding_size": 256
+        }
+    }
+
+    with open("config/config_optuna.yml", "w") as f:
+        yaml.dump(config, f)
+
+    # Run the training for "ARCFACE_OWN" (return val loss as objective)
+    run_experiment("ARCFACE_OWN")
+    
 def main():
-    for mode in MODES:
-        print(Fore.MAGENTA + f"\n{'='*50}")
-        print(Fore.BLUE + f"Starting training for mode: {mode}")
-        print(Fore.MAGENTA + f"{'='*50}")
-        run_experiment(mode)
-        print(Fore.GREEN + f"\nCompleted training for mode: {mode}")
+    
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=25)
+    # for mode in MODES:
+    #     print(Fore.MAGENTA + f"\n{'='*50}")
+    #     print(Fore.BLUE + f"Starting training for mode: {mode}")
+    #     print(Fore.MAGENTA + f"{'='*50}")
+    #     run_experiment(mode)
+    #     print(Fore.GREEN + f"\nCompleted training for mode: {mode}")
 
 if __name__ == "__main__":
     main()
