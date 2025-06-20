@@ -37,7 +37,8 @@ class SiameseNetworkOwn(nn.Module):
         output = self.cnn1(x)
         output = output.view(output.size()[0], -1)
         output = self.fc1(output)
-        return F.normalize(output, p=2, dim=1)
+        return output
+        #return F.normalize(output, p=2, dim=1) JUST FOR COSINE-BASED ALGORITHMS
 
     def forward(self, input1, input2):
         # In this function we pass in both images and obtain both vectors

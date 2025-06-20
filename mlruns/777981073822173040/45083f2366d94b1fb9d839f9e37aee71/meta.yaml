@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/777981073822173040/45083f2366d94b1fb9d839f9e37aee71/artifacts
+end_time: 1750448085432
+entry_point_name: ''
+experiment_id: '777981073822173040'
+lifecycle_stage: active
+run_id: 45083f2366d94b1fb9d839f9e37aee71
+run_name: clean-whale-73
+run_uuid: 45083f2366d94b1fb9d839f9e37aee71
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750447903382
+status: 3
+tags: []
+user_id: ehait

@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/391928270697856048/fe20ff404803422b8f98faf912e62d53/artifacts
+end_time: 1750433108375
+entry_point_name: ''
+experiment_id: '391928270697856048'
+lifecycle_stage: active
+run_id: fe20ff404803422b8f98faf912e62d53
+run_name: thoughtful-moth-504
+run_uuid: fe20ff404803422b8f98faf912e62d53
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750430761505
+status: 3
+tags: []
+user_id: ehait

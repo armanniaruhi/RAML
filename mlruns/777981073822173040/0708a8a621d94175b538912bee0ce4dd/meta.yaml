@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/777981073822173040/0708a8a621d94175b538912bee0ce4dd/artifacts
+end_time: 1750448119092
+entry_point_name: ''
+experiment_id: '777981073822173040'
+lifecycle_stage: active
+run_id: 0708a8a621d94175b538912bee0ce4dd
+run_name: brawny-wolf-771
+run_uuid: 0708a8a621d94175b538912bee0ce4dd
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750448119048
+status: 3
+tags: []
+user_id: ehait

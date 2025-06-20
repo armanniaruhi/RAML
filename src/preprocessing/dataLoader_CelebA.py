@@ -7,9 +7,10 @@ from pytorch_metric_learning.samplers import MPerClassSampler
 import random
 from torch.utils.data import random_split, DataLoader
 train_transform = transforms.Compose([
-    transforms.Resize(128),
-    transforms.RandomCrop(100),
-    transforms.RandomHorizontalFlip(p=0.5),
+    #transforms.Resize(128),
+    #transforms.RandomCrop(100),
+    #transforms.RandomHorizontalFlip(p=0.5),
+    transforms.Resize([100, 100]),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485], std=[0.229]),
 ])
