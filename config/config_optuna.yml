@@ -7,10 +7,10 @@ PREPROCESSING:
   partition_file: data/celeba/list_eval_partition.csv
 TRAINING_ARCFACE:
   embedding_size: 256
-  lr: 5.15459539749832e-05
-  margin: 0.5103395586706987
-  num_epochs: 30
-  patience: 5
-  scale: 32.37884676918735
-  scheduling: true
-  weight_decay: 7.805308262995506e-05
+  lr: 1.5637654727242717e-05
+  margin: 0.28354689792532023
+  num_epochs: 100
+  patience: 20
+  scale: 39.4070176326951
+  scheduling: false
+  weight_decay: 0.00021016419155668912
