@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/258438853983849811/df9ce4d5aeed4a13a7b220709758a09a/artifacts
+end_time: 1750438872806
+entry_point_name: ''
+experiment_id: '258438853983849811'
+lifecycle_stage: active
+run_id: df9ce4d5aeed4a13a7b220709758a09a
+run_name: entertaining-bass-24
+run_uuid: df9ce4d5aeed4a13a7b220709758a09a
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750437247085
+status: 3
+tags: []
+user_id: ehait

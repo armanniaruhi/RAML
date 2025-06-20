@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/752140471259510391/e3204d30d40048ef909c2d7cdd5384b0/artifacts
+end_time: 1750434557308
+entry_point_name: ''
+experiment_id: '752140471259510391'
+lifecycle_stage: active
+run_id: e3204d30d40048ef909c2d7cdd5384b0
+run_name: upset-bat-594
+run_uuid: e3204d30d40048ef909c2d7cdd5384b0
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750433251141
+status: 3
+tags: []
+user_id: ehait

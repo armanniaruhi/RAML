@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/ehait/PycharmProjects/RAML/mlruns/839353482850134369/572e457d86b140c08cc4aeec56423122/artifacts
+end_time: 1750443155106
+entry_point_name: ''
+experiment_id: '839353482850134369'
+lifecycle_stage: active
+run_id: 572e457d86b140c08cc4aeec56423122
+run_name: aged-mouse-129
+run_uuid: 572e457d86b140c08cc4aeec56423122
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750442112825
+status: 3
+tags: []
+user_id: ehait

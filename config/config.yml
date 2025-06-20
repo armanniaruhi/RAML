@@ -4,8 +4,8 @@ PREPROCESSING:
   label_file: data/celeba/identity_CelebA.txt
   partition_file: data/celeba/list_eval_partition.csv
   # Data Loader settings
-  batch_size: 64
-  m_per_sample: 2
+  batch_size: 128
+  m_per_sample: 2 # 2 = ARCFACE & CONTRASTIVE, 4 = MS
   image_size: 100
 
 TRAINING_ARCFACE:
@@ -15,29 +15,29 @@ TRAINING_ARCFACE:
   scheduling: reduce_on_plateau  # Options: onecycle - reduce_on_plateau - cosine
   # Training
   num_epochs: 200
-  patience: 25
+  patience: 10
   # Loss
   loss_type: arcface  # Options: contrastive - multisimilarity - arcface - margin
 
 TRAINING_CONTRASTIVE:
   # Optimizer
-  lr: 0.0005
+  lr: 0.0003
   weight_decay:   0.0001
   scheduling: cosine  # Options: onecycle - reduce_on_plateau - cosine
   # Training
   num_epochs: 500
-  patience: 15
+  patience: 100
   # Loss
   loss_type: contrastive
 
 TRAINING_MS:
   # Optimizer
   #0.0005
-  lr: 0.0005
+  lr: 0.0003
   weight_decay:   0.0001
-  scheduling: cosine 
+  scheduling: onecycle
   # Training
   num_epochs: 150
-  patience: 7
+  patience: 10
   # Loss
   loss_type: multisimilarity

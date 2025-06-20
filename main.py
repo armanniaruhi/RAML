@@ -22,7 +22,7 @@ import logging
 logging.getLogger("mlflow").setLevel(logging.ERROR)  # oder .CRITICAL
 
 # List of modes to run
-MODES = ["ARCFACE_RESNET"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
+MODES = ["CONTRASTIVE_OWN"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
 
 def run_experiment(MODE):
     # Load configuration parameters from YAML file
@@ -96,7 +96,7 @@ def run_experiment(MODE):
     elif LOSS_TYPE == "arcface":
         criterion = ArcFaceLoss(num_classes=NUM_IDENTITY, embedding_size=256, margin=0.5, scale=64).to(DEVICE)
     elif LOSS_TYPE == "multisimilarity":
-        criterion = losses.MultiSimilarityLoss(alpha=2, beta=50.0, base=0.5).to(DEVICE)
+        criterion = losses.MultiSimilarityLoss(alpha=70, beta=40.0, base=0.5).to(DEVICE)
 
     # Initialize loss history trackers
     batch_loss_history = []
@@ -111,7 +111,7 @@ def run_experiment(MODE):
 
     # Optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     # Start MLflow run for tracking
     with mlflow.start_run():

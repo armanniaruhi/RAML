@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
+import torch.nn.functional as F
 
 class SiameseNetwork(nn.Module):
     def __init__(self):
@@ -45,6 +46,7 @@ class SiameseNetwork(nn.Module):
         output = output.view(output.size()[0], -1)
         output = self.fc1(output)
         return output
+        #return F.normalize(output, p=2, dim=1) #JUST FOR COSINE-BASED ALGORITHMS
     
     def forward(self, input1, input2):
         return self.forward_once(input1), self.forward_once(input2)
