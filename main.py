@@ -12,9 +12,11 @@ import mlflow.pytorch
 import tempfile
 import os
 import numpy as np
+from colorama import Fore, Style, init
+init(autoreset=True)  # Automatically reset to default color after each print
 
 # List of modes to run
-MODES = ["ARCFACE_RESNET", "MS_RESNET"]
+MODES = ["ARCFACE_OWN", "MS_OWN"]   # "_OWN", "_RESNET"
 
 def run_experiment(MODE):
     # Load configuration parameters from YAML file
@@ -33,14 +35,13 @@ def run_experiment(MODE):
             TRAIN = config["TRAINING_MS"]
             LOSS_TYPE = "multisimilarity"
         
-        print(f"\nConfiguring for mode: {MODE}")
-        print(TRAIN)
 
         # Preprocessing config
         IMAGE_DIR = PRE["image_dir"]
         LABEL_FILE = PRE["label_file"]
         PARTITION_FILE = PRE["partition_file"]
         BATCH_SIZE = PRE["batch_size"]
+        IMAGE_SIZE = PRE["image_size"]
         M_PER_SAMPLE = PRE["m_per_sample"]
         DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -51,8 +52,14 @@ def run_experiment(MODE):
         NUM_EPOCHS = TRAIN["num_epochs"]
         PATIENCE = TRAIN["patience"]
         NUM_IDENTITY = 200     # Number of unique identities in training
-        network = "resnet"     # Choose which network to use
+        if "RESNET" in MODE:
+            NETWORK = "resnet"
+        elif "OWN" in MODE:
+            NETWORK = "own"
 
+        print(Fore.CYAN + f"\nConfiguring for mode: {MODE}")
+        print(Fore.YELLOW + str(TRAIN))
+        
     # Set or create experiment
     experiment_name = MODE
     mlflow.set_experiment(experiment_name)
@@ -62,6 +69,7 @@ def run_experiment(MODE):
         image_dir=IMAGE_DIR,
         label_file=LABEL_FILE,
         partition_file=PARTITION_FILE,
+        image_size=IMAGE_SIZE,
         m_per_sample=M_PER_SAMPLE,
         batch_size=BATCH_SIZE,
         num_identities=NUM_IDENTITY,
@@ -69,10 +77,12 @@ def run_experiment(MODE):
     )
 
     # Initialize the model
-    if network == "resnet":
+    if NETWORK == "resnet":
         net = SiameseNetwork().to(DEVICE)
-    else:
+    elif NETWORK == "own":
         net = SiameseNetworkOwn().to(DEVICE)
+    
+    print(Fore.GREEN + f"Selected Network is: {NETWORK}")
 
     # Select the loss function
     if LOSS_TYPE == "contrastive":
@@ -101,19 +111,19 @@ def run_experiment(MODE):
     with mlflow.start_run():
         mlflow.log_param("num_epochs", NUM_EPOCHS)
         mlflow.log_param("loss_type", LOSS_TYPE)
-        mlflow.log_param("network", network)
+        mlflow.log_param("network", NETWORK)
         mlflow.log_param("optimizer", optimizer.__class__.__name__)
         mlflow.log_param("patience", PATIENCE)
 
     for epoch in range(NUM_EPOCHS):
                 if early_stop:
-                    print(f"Early stopping triggered after {epoch} epochs!")
+                    print(Fore.RED + f"Early stopping triggered after {epoch} epochs!")
                     break
                     
                 net.train()
                 cum_loss = 0
                 pbar = tqdm(enumerate(train_loader, 0), total=len(train_loader),
-                            desc=f"{MODE} - Epoch {epoch + 1}/{NUM_EPOCHS} [Training]", leave=True)
+                             desc=Fore.CYAN + f"{MODE} - Epoch {epoch + 1}/{NUM_EPOCHS} [Training]" + Style.RESET_ALL, leave=True)
 
                 for i, (img0, img1, label, label0, label1) in pbar:
                     # Move data to the selected device
@@ -248,23 +258,24 @@ def run_experiment(MODE):
                 mlflow.log_artifact(checkpoint_path, artifact_path="checkpoints")
 
                 # Log final model to MLflow
-                mlflow.pytorch.log_model(net, "models/final_model")
+                # Create input example for logging (dummy images with correct shape)
+                # Adjust size if your network expects something different
+                input_example = (
+                    torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE),  # img0
+                    torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE)   # img1
+                )
+
+                # Log model with input example so MLflow can infer the signature
+                mlflow.pytorch.log_model(net, "models/final_model", input_example=input_example)
+
 
 def main():
     for mode in MODES:
-        print(f"\n{'='*50}")
-        print(f"Starting training for mode: {mode}")
-        print(f"{'='*50}")
+        print(Fore.MAGENTA + f"\n{'='*50}")
+        print(Fore.BLUE + f"Starting training for mode: {mode}")
+        print(Fore.MAGENTA + f"{'='*50}")
         run_experiment(mode)
-        print(f"\nCompleted training for mode: {mode}")
-
-def main():
-    for mode in MODES:
-        print(f"\n{'='*50}")
-        print(f"Starting training for mode: {mode}")
-        print(f"{'='*50}")
-        run_experiment(mode)
-        print(f"\nCompleted training for mode: {mode}")
+        print(Fore.GREEN + f"\nCompleted training for mode: {mode}")
 
 if __name__ == "__main__":
     main()

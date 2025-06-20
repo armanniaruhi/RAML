@@ -24,7 +24,7 @@ def _load_partitions(partition_file):
 
 
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, transform=None,
+    def __init__(self, image_dir, label_file, image_size=100, transform=None,
                  partition_file=None, partition_id=None, output_format='triplet'):
         """
         Args:class CelebALabeledDataset(Dataset):
@@ -72,7 +72,7 @@ class CelebALabeledDataset(Dataset):
             ])
             '''
             self.transform = transforms.Compose([
-                    transforms.Resize([100, 100]),
+                    transforms.Resize([image_size, image_size]),
                     transforms.ToTensor()
                 ])
 
@@ -180,7 +180,7 @@ class CelebALabeledDataset(Dataset):
 
 
 def get_partitioned_dataloaders(
-    image_dir, label_file, partition_file,
+    image_dir, label_file, partition_file, image_size=100,
     batch_size=32, m_per_sample=2, 
     num_identities=500, seed=42,
     output_format="siamese"
@@ -192,7 +192,7 @@ def get_partitioned_dataloaders(
 
     # Load the full dataset for train partition (partition_id=0) to get all labels
     full_dataset = CelebALabeledDataset(
-        image_dir, label_file,
+        image_dir, label_file, image_size= image_size,
         partition_file=partition_file, partition_id=0,
         output_format=output_format
     )
