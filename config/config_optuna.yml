@@ -1,0 +1,16 @@
+PREPROCESSING:
+  batch_size: 64
+  image_dir: data/celeba/img_align_celeba
+  image_size: 100
+  label_file: data/celeba/identity_CelebA.txt
+  m_per_sample: 2
+  partition_file: data/celeba/list_eval_partition.csv
+TRAINING_ARCFACE:
+  embedding_size: 256
+  lr: 5.15459539749832e-05
+  margin: 0.5103395586706987
+  num_epochs: 30
+  patience: 5
+  scale: 32.37884676918735
+  scheduling: true
+  weight_decay: 7.805308262995506e-05
