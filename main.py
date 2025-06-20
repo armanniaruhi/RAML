@@ -15,8 +15,14 @@ import numpy as np
 from colorama import Fore, Style, init
 init(autoreset=True)  # Automatically reset to default color after each print
 
+import warnings
+warnings.filterwarnings("ignore")
+
+import logging
+logging.getLogger("mlflow").setLevel(logging.ERROR)  # oder .CRITICAL
+
 # List of modes to run
-MODES = ["ARCFACE_OWN", "MS_OWN"]   # "_OWN", "_RESNET"
+MODES = ["ARCFACE_OWN"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
 
 def run_experiment(MODE):
     # Load configuration parameters from YAML file
@@ -90,7 +96,7 @@ def run_experiment(MODE):
     elif LOSS_TYPE == "arcface":
         criterion = ArcFaceLoss(num_classes=NUM_IDENTITY, embedding_size=256, margin=0.5, scale=64).to(DEVICE)
     elif LOSS_TYPE == "multisimilarity":
-        criterion = losses.MultiSimilarityLoss(alpha=70, beta=40, base=0.5).to(DEVICE)
+        criterion = losses.MultiSimilarityLoss(alpha=2, beta=50.0, base=0.5).to(DEVICE)
 
     # Initialize loss history trackers
     batch_loss_history = []
@@ -105,7 +111,7 @@ def run_experiment(MODE):
 
     # Optimizer and learning rate scheduler
     optimizer = torch.optim.Adam(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     # Start MLflow run for tracking
     with mlflow.start_run():
@@ -190,8 +196,8 @@ def run_experiment(MODE):
                     best_val_loss = avg_val_loss
                     epochs_no_improve = 0
                     # Save best model
-                    torch.save(net.state_dict(), f'models/{MODE}.pth')
-                    mlflow.log_artifact(f'models/{MODE}.pth', artifact_path="best_model")
+                    #torch.save(net.state_dict(), f'models/{MODE}.pth')
+                    #mlflow.log_artifact(f'models/{MODE}.pth', artifact_path="best_model")
                 else:
                     epochs_no_improve += 1
                     if epochs_no_improve == PATIENCE:
@@ -260,10 +266,10 @@ def run_experiment(MODE):
                 # Log final model to MLflow
                 # Create input example for logging (dummy images with correct shape)
                 # Adjust size if your network expects something different
-                input_example = (
-                    torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE),  # img0
-                    torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE)   # img1
-                )
+                input_example = {
+                    "input1": torch.randn(1, 1, IMAGE_SIZE, IMAGE_SIZE).cpu().numpy(), # img0
+                    "input2": torch.randn(1, 1, IMAGE_SIZE, IMAGE_SIZE).cpu().numpy()  # img1
+                }
 
                 # Log model with input example so MLflow can infer the signature
                 mlflow.pytorch.log_model(net, "models/final_model", input_example=input_example)
