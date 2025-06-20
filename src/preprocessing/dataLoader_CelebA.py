@@ -6,63 +6,19 @@ import torch
 from pytorch_metric_learning.samplers import MPerClassSampler
 import random
 from torch.utils.data import random_split, DataLoader
-
 train_transform = transforms.Compose([
-    transforms.Resize(128),  # Etwas höhere Auflösung für bessere Details
-    transforms.RandomCrop(112),  # Standardgröße für Gesichtserkennungsmodelle
+    transforms.Resize(128),
+    transforms.RandomCrop(100),
     transforms.RandomHorizontalFlip(p=0.5),
-
-    # Geometrische Transformationen (vor Farboperationen)
-    transforms.RandomApply([
-        transforms.RandomAffine(
-            degrees=7,
-            translate=(0.03, 0.03),
-            scale=(0.92, 1.08),
-            shear=5
-        )
-    ], p=0.6),
-
-    # Beleuchtungsvariationen
-    transforms.RandomApply([
-        transforms.ColorJitter(
-            brightness=0.18,
-            contrast=0.18,
-            saturation=0  # Für Graustufen irrelevant
-        )
-    ], p=0.5),
-
-    # Perspektivische Verzerrungen (simuliert Kamerawinkel)
-    transforms.RandomPerspective(
-        distortion_scale=0.12,
-        p=0.35
-    ),
-
-    # Rauschen und Unschärfe
-    transforms.RandomApply([transforms.GaussianBlur(
-        kernel_size=(3, 3),
-        sigma=(0.1, 0.8)
-    )], p=0.3),
-
-    transforms.RandomApply([transforms.GaussianNoise(
-        mean=0.0,
-        std=0.02
-    )], p=0.25),
-
-    # Qualitätsdegradation
-    transforms.RandomApply([transforms.RandomResizedCrop(
-        size=112,
-        scale=(0.85, 0.95),
-        ratio=(0.95, 1.05)
-    ], p=0.4),
-
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485], std=[0.229]),  # ImageNet-Statistiken für Graustufen
+    transforms.Normalize(mean=[0.485], std=[0.229]),
 ])
+
 
 eval_transform = transforms.Compose([
     transforms.Resize([100, 100]),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
+    transforms.Normalize(mean=[0.485], std=[0.229])
 ])
 
 

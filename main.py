@@ -70,7 +70,7 @@ def run_experiment(MODE):
     experiment_name = MODE
     mlflow.set_experiment(experiment_name)
 
-    # Load train, validation, and test dataloaders
+    # Load train, validation, and t est dataloaders
     train_loader, val_loader, _ = get_partitioned_dataloaders(
         image_dir=IMAGE_DIR,
         label_file=LABEL_FILE,
@@ -110,7 +110,7 @@ def run_experiment(MODE):
     early_stop = False
 
     # Optimizer and learning rate scheduler
-    optimizer = torch.optim.Adam(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    optimizer = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     # Start MLflow run for tracking
