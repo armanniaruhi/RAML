@@ -6,6 +6,8 @@
 
 # Ignored directories
 /data/
+/models/
+/mlruns/
 
 
 
