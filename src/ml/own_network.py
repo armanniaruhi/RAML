@@ -4,8 +4,10 @@ import torch.nn.functional as F
 #create the Siamese Neural Network
 class SiameseNetworkOwn(nn.Module):
 
-    def __init__(self):
+    def __init__(self, loss_type):
         super(SiameseNetworkOwn, self).__init__()
+
+        self.loss_type = loss_type
 
         # Setting up the Sequential of CNN Layers
         self.cnn1 = nn.Sequential(
@@ -37,8 +39,10 @@ class SiameseNetworkOwn(nn.Module):
         output = self.cnn1(x)
         output = output.view(output.size()[0], -1)
         output = self.fc1(output)
-        return output
-        #return F.normalize(output, p=2, dim=1) JUST FOR COSINE-BASED ALGORITHMS
+        if "contrastive" in self.loss_type or "CONTRASTIVE" in self.loss_type:
+            return output
+        else:
+            return F.normalize(output, p=2, dim=1) #JUST FOR COSINE-BASED ALGORITHMS
 
     def forward(self, input1, input2):
         # In this function we pass in both images and obtain both vectors

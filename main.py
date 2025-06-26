@@ -22,7 +22,23 @@ import logging
 logging.getLogger("mlflow").setLevel(logging.ERROR)  # oder .CRITICAL
 
 # List of modes to run
-MODES = ["CONTRASTIVE_OWN"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
+MODES = [ "CONTRASTIVE_RESNET_5"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
+
+import random
+import numpy as np
+import torch
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)  # if you use GPU
+    torch.cuda.manual_seed_all(seed)  # if multiple GPUs
+    torch.backends.cudnn.deterministic = True  # makes results reproducible but slower
+    torch.backends.cudnn.benchmark = False
+
+# Call it once near the top before training or data loading:
+set_seed(42)
 
 def run_experiment(MODE):
     # Load configuration parameters from YAML file
@@ -46,18 +62,18 @@ def run_experiment(MODE):
         IMAGE_DIR = PRE["image_dir"]
         LABEL_FILE = PRE["label_file"]
         PARTITION_FILE = PRE["partition_file"]
-        BATCH_SIZE = PRE["batch_size"]
+        BATCH_SIZE = 32
         IMAGE_SIZE = PRE["image_size"]
-        M_PER_SAMPLE = PRE["m_per_sample"]
+        M_PER_SAMPLE = 8
         DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Training config
         LR = TRAIN["lr"]
         SCHEDULING = TRAIN["scheduling"]
         WEIGHT_DECAY = TRAIN["weight_decay"]
-        NUM_EPOCHS = TRAIN["num_epochs"]
-        PATIENCE = TRAIN["patience"]
-        NUM_IDENTITY = 200     # Number of unique identities in training
+        NUM_EPOCHS = 100
+        PATIENCE = 6
+        NUM_IDENTITY = 500     # Number of unique identities in training
         if "RESNET" in MODE:
             NETWORK = "resnet"
         elif "OWN" in MODE:
@@ -75,7 +91,7 @@ def run_experiment(MODE):
         image_dir=IMAGE_DIR,
         label_file=LABEL_FILE,
         partition_file=PARTITION_FILE,
-        image_size=IMAGE_SIZE,
+        transform=None,
         m_per_sample=M_PER_SAMPLE,
         batch_size=BATCH_SIZE,
         num_identities=NUM_IDENTITY,
@@ -84,15 +100,15 @@ def run_experiment(MODE):
 
     # Initialize the model
     if NETWORK == "resnet":
-        net = SiameseNetwork().to(DEVICE)
+        net = SiameseNetwork(loss_type=LOSS_TYPE).to(DEVICE)
     elif NETWORK == "own":
-        net = SiameseNetworkOwn().to(DEVICE)
+        net = SiameseNetworkOwn(loss_type=LOSS_TYPE).to(DEVICE)
 
     print(Fore.GREEN + f"Selected Network is: {NETWORK}")
 
     # Select the loss function
     if LOSS_TYPE == "contrastive":
-        criterion = ContrastiveLoss(margin=20).to(DEVICE)
+        criterion = ContrastiveLoss(margin=10).to(DEVICE)
     elif LOSS_TYPE == "arcface":
         criterion = ArcFaceLoss(num_classes=NUM_IDENTITY, embedding_size=256, margin=0.5, scale=64).to(DEVICE)
     elif LOSS_TYPE == "multisimilarity":
@@ -110,8 +126,9 @@ def run_experiment(MODE):
     early_stop = False
 
     # Optimizer and learning rate scheduler
-    optimizer = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    # (b) Adjust Learning Rate
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.0005, weight_decay=0.00001)  # 3x higher than current
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01)
 
     # Start MLflow run for tracking
     with mlflow.start_run():
@@ -176,6 +193,7 @@ def run_experiment(MODE):
                         label0, label1 = label0.to(DEVICE), label1.to(DEVICE)
 
                         output1, output2 = net(img0, img1)
+                        
 
                         if LOSS_TYPE == "contrastive":
                             loss = criterion(output1, output2, label)
@@ -217,8 +235,7 @@ def run_experiment(MODE):
                 pbar.close()
 
                 # Update learning rate scheduler
-                if SCHEDULING:
-                    scheduler.step()
+                scheduler.step(avg_val_loss)
 
                 # Plot batch and epoch loss curves
                 plt.figure(figsize=(12, 6))

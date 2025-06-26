@@ -6,28 +6,98 @@ import torch
 from pytorch_metric_learning.samplers import MPerClassSampler
 import random
 from torch.utils.data import random_split, DataLoader
+from PIL import Image
+import numpy as np
+
+
+from PIL import Image, ImageFilter, ImageEnhance
+
+## Custom augmentations
+class CenterZoom:
+    def __init__(self, zoom_factor=1.5):
+        self.zoom_factor = zoom_factor
+
+    def __call__(self, img):
+        width, height = img.size
+        new_width = int(width / self.zoom_factor)
+        new_height = int(height / self.zoom_factor)
+        left = (width - new_width) // 2
+        top = (height - new_height) // 2
+        right = left + new_width
+        bottom = top + new_height
+        img = img.crop((left, top, right, bottom))
+        return img.resize((width, height))
+
+
+class RandomRotate:
+    def __init__(self, degrees=15):
+        self.degrees = degrees
+
+    def __call__(self, img):
+        angle = random.uniform(-self.degrees, self.degrees)
+        return img.rotate(angle, resample=Image.BILINEAR, expand=False)
+
+
+class RandomBlur:
+    def __init__(self, max_radius=2):
+        self.max_radius = max_radius
+
+    def __call__(self, img):
+        radius = random.uniform(0, self.max_radius)
+        return img.filter(ImageFilter.GaussianBlur(radius=radius))
+
+
+class RandomBrightnessContrast:
+    def __init__(self, brightness_range=(0.8, 1.2), contrast_range=(0.8, 1.2)):
+        self.brightness_range = brightness_range
+        self.contrast_range = contrast_range
+
+    def __call__(self, img):
+        enhancer = ImageEnhance.Brightness(img)
+        brightness_factor = random.uniform(*self.brightness_range)
+        img = enhancer.enhance(brightness_factor)
+
+        enhancer = ImageEnhance.Contrast(img)
+        contrast_factor = random.uniform(*self.contrast_range)
+        img = enhancer.enhance(contrast_factor)
+        return img
+
+
+class RandomNoise:
+    def __init__(self, noise_level=0.05):
+        self.noise_level = noise_level
+
+    def __call__(self, img):
+        img_np = np.array(img) / 255.0
+        noise = np.random.normal(0, self.noise_level, img_np.shape)
+        noisy_img = img_np + noise
+        noisy_img = np.clip(noisy_img, 0, 1)
+        noisy_img = (noisy_img * 255).astype(np.uint8)
+        return Image.fromarray(noisy_img)
+
+
 train_transform = transforms.Compose([
-    #transforms.Resize(128),
-    #transforms.RandomCrop(100),
-    #transforms.RandomHorizontalFlip(p=0.5),
-    transforms.Resize([100, 100]),
+    RandomRotate(degrees=10),  # Increased from 2
+    CenterZoom(zoom_factor=1.5),  # Reduced from 1.5
+    transforms.RandomHorizontalFlip(),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.Resize([224, 224]),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485], std=[0.229]),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-
 eval_transform = transforms.Compose([
-    transforms.Resize([100, 100]),
+    CenterZoom(zoom_factor=1.5),
+    transforms.Resize([224, 224]),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485], std=[0.229])
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
 ])
 
 
 def _load_partitions(partition_file):
-    """Load train/val/test partition mappings from file."""
     partition_map = {}
     with open(partition_file, 'r') as f:
-        # Skip header if it exists
         if 'csv' in partition_file.lower():
             next(f, None)
         for line in f:
@@ -39,52 +109,40 @@ def _load_partitions(partition_file):
 
 
 class CelebALabeledDataset(Dataset):
-    def __init__(self, image_dir, label_file, image_size=100, transform=None,
-                 partition_file=None, partition_id=None, output_format='triplet'):
+    def __init__(self, image_dir, label_file, transform=None,
+                 partition_file=None, partition_id=None,
+                 to_rgb=True):
         """
-        Args:class CelebALabeledDataset(Dataset):
-
+        Args:
             image_dir (str): Path to image directory
             label_file (str): Path to label file
-            img_size (int): Target image size
             transform (callable): Optional transforms
             partition_file (str): Path to partition file
             partition_id (int): 0=train, 1=val, 2=test
-            output_format (str): 'triplet' or 'siamese' (5-tuple)
+            to_rgb (bool): If True, convert images to RGB
         """
         self.image_dir = image_dir
         self.label_map = self._load_labels(label_file)
-        self.output_format = output_format
+        self.to_rgb = to_rgb
 
-        # Load partition information
         if partition_file and partition_id is not None:
             partition_map = _load_partitions(partition_file)
             self.image_files = [
                 f for f in os.listdir(image_dir)
-                if f in self.label_map and f in partition_map
-                   and partition_map[f] == partition_id
+                if f in self.label_map and f in partition_map and partition_map[f] == partition_id
             ]
         else:
             self.image_files = [f for f in os.listdir(image_dir) if f in self.label_map]
 
-        # Store labels as list for sampler access
         self.labels = [self.label_map[img_file] for img_file in self.image_files]
         self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
         self.label_to_indices = {label: [] for label in self.unique_labels}
-        
         for idx, label in enumerate(self.labels):
             self.label_to_indices[label].append(idx)
 
-        # Default transforms if none provided
-        # Default transforms if none provided
-        if transform is None:
-            self.transform = train_transform if partition_id == 0 else eval_transform
-        else:
-            self.transform = transform
-
+        self.transform = transform if transform else (train_transform if partition_id == 0 else eval_transform)
 
     def _load_labels(self, label_file):
-        """Load label mappings from file."""
         label_map = {}
         with open(label_file, 'r') as f:
             for line in f:
@@ -98,198 +156,167 @@ class CelebALabeledDataset(Dataset):
         return len(self.image_files)
 
     def __getitem__(self, idx):
-        if self.output_format == 'triplet':
-            return self._get_triplet_item(idx)
-        else:  # siamese (5-tuple)
-            return self._get_siamese_item(idx)
+        return self._get_siamese_item(idx)
 
     def _get_triplet_item(self, idx):
-        """Return anchor, positive, negative images for triplet loss"""
         anchor_img, anchor_label = self._load_single_item(idx)
-        
-        # Find positive sample
+
         positive_idx = idx
-        while positive_idx == idx:  # Ensure different image
+        while positive_idx == idx:
             positive_idx = random.choice(self.label_to_indices[anchor_label])
         positive_img, _ = self._load_single_item(positive_idx)
-        
-        # Find negative sample
+
         negative_label = random.choice([l for l in self.unique_labels if l != anchor_label])
         negative_idx = random.choice(self.label_to_indices[negative_label])
         negative_img, _ = self._load_single_item(negative_idx)
-        
+
         return anchor_img, positive_img, negative_img, anchor_label
 
     def _get_siamese_item(self, idx):
-        """Return img1, img2, similarity, label1, label2 (5-tuple)"""
-        img0_tuple = (os.path.join(self.image_dir, self.image_files[idx]), self.labels[idx])
-        
-        # 50% chance to get same class
+        img0_path, img0_label = os.path.join(self.image_dir, self.image_files[idx]), self.labels[idx]
         should_get_same_class = random.randint(0, 1)
-        
+
         if should_get_same_class:
             while True:
-                # Find same class image
                 img1_idx = random.choice(range(len(self.image_files)))
-                if self.labels[img1_idx] == img0_tuple[1] and img1_idx != idx:
+                if self.labels[img1_idx] == img0_label and img1_idx != idx:
                     break
         else:
             while True:
-                # Find different class image
                 img1_idx = random.choice(range(len(self.image_files)))
-                if self.labels[img1_idx] != img0_tuple[1]:
+                if self.labels[img1_idx] != img0_label:
                     break
-        
-        img1_tuple = (os.path.join(self.image_dir, self.image_files[img1_idx]), self.labels[img1_idx])
-        
+
+        img1_path, img1_label = os.path.join(self.image_dir, self.image_files[img1_idx]), self.labels[img1_idx]
+
         try:
-            #img0 = Image.open(img0_tuple[0]).convert('RGB')
-            #img1 = Image.open(img1_tuple[0]).convert('RGB')
-            img0 = Image.open(img0_tuple[0]).convert('L')
-            img1 = Image.open(img1_tuple[0]).convert('L')
+            mode = 'RGB' if self.to_rgb else 'L'
+            img0 = Image.open(img0_path).convert(mode)
+            img1 = Image.open(img1_path).convert(mode)
         except Exception as e:
-            print(f"[Siamese] Fehler beim Öffnen von Bildern ({img0_tuple[0]} oder {img1_tuple[0]}): {e}")
+            print(f"[Siamese] Error opening {img0_path} or {img1_path}: {e}")
             return self.__getitem__((idx + 1) % len(self.image_files))
 
-        
         if self.transform:
             img0 = self.transform(img0)
             img1 = self.transform(img1)
-            
+
         return (
-            img0, 
-            img1, 
-            torch.tensor([int(img0_tuple[1] != img1_tuple[1])], dtype=torch.float32),
-            img0_tuple[1],
-            img1_tuple[1]
+            img0,
+            img1,
+            torch.tensor([int(img0_label != img1_label)], dtype=torch.float32),
+            img0_label,
+            img1_label
         )
 
     def _load_single_item(self, idx):
-        """Helper to load a single image and label"""
         filename = self.image_files[idx]
         label = self.label_map[filename]
-        try:
-            #img = Image.open(os.path.join(self.image_dir, filename)).convert('RGB')
-            img = Image.open(os.path.join(self.image_dir, filename)).convert('L')
+        path = os.path.join(self.image_dir, filename)
 
+        try:
+            mode = 'RGB' if self.to_rgb else 'L'
+            img = Image.open(path).convert(mode)
         except Exception as e:
-            print(f"[Triplet] Fehler beim Öffnen von {filename}: {e}")
+            print(f"[Triplet] Error opening {filename}: {e}")
             return self._load_single_item((idx + 1) % len(self.image_files))
 
-        
         if self.transform:
             img = self.transform(img)
-            
+
         return img, label
 
 
 def get_partitioned_dataloaders(
-    image_dir, label_file, partition_file, image_size=100,
-    batch_size=32, m_per_sample=2, 
-    num_identities=500, seed=42,
-    output_format="siamese"
+    image_dir, label_file, partition_file, transform, batch_size=32, m_per_sample=2,
+    num_identities=500, seed=42
 ):
     """
-    Creates train/val/test dataloaders from fixed-identity subsets with MPerClassSampler.
-    Labels are remapped from original labels to consecutive integers starting at 0.
+    Creates train/val/test dataloaders with disjoint identities in each split.
     """
-
-    # Load the full dataset for train partition (partition_id=0) to get all labels
+    # Load full dataset (to get all image-label mappings)
     full_dataset = CelebALabeledDataset(
-        image_dir, label_file, image_size= image_size,
-        partition_file=partition_file, partition_id=0,
-        output_format=output_format
+        image_dir, label_file, partition_file=partition_file, partition_id=0, transform=transform
     )
 
-    # Fix random seed for reproducibility
+    # Fix seed
     random.seed(seed)
     torch.manual_seed(seed)
 
-    # Select fixed subset of unique identities/labels
+    # Get unique labels (identities)
     all_labels = list(set(full_dataset.labels))
-    selected_labels = set(random.sample(all_labels, min(num_identities, len(all_labels))))
+    selected_labels = random.sample(all_labels, min(num_identities, len(all_labels)))
 
-    # Filter image files and labels to only include selected labels
-    filtered_image_files = [
-        fname for fname, label in zip(full_dataset.image_files, full_dataset.labels)
-        if label in selected_labels
-    ]
+    # Split identities into disjoint sets
+    num_train = int(0.8 * len(selected_labels))
+    num_val = int(0.1 * len(selected_labels))
+    num_test = len(selected_labels) - num_train - num_val
 
-    filtered_label_map = {
-        fname: full_dataset.label_map[fname]
-        for fname in filtered_image_files
-    }
+    random.shuffle(selected_labels)
+    train_ids = set(selected_labels[:num_train])
+    val_ids = set(selected_labels[num_train:num_train + num_val])
+    test_ids = set(selected_labels[num_train + num_val:])
 
-    # Get original labels in filtered data and create remapping
-    original_labels_filtered = [filtered_label_map[fname] for fname in filtered_image_files]
-    unique_filtered_labels = sorted(set(original_labels_filtered))
-    label_remap = {orig_label: new_label for new_label, orig_label in enumerate(unique_filtered_labels)}
+    def create_split_dataset(split_ids, transform):
+        # Get image files and remap labels
+        image_files = [f for f, l in zip(full_dataset.image_files, full_dataset.labels) if l in split_ids]
+        label_map = {f: full_dataset.label_map[f] for f in image_files}
+        original_labels = [label_map[f] for f in image_files]
+        unique_labels = sorted(set(original_labels))
+        label_remap = {orig: new for new, orig in enumerate(unique_labels)}
+        remapped_label_map = {f: label_remap[l] for f, l in label_map.items()}
 
-    # Remap the labels in the filtered_label_map
-    remapped_label_map = {fname: label_remap[label] for fname, label in filtered_label_map.items()}
+        class SplitDataset(CelebALabeledDataset):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.image_files = image_files
+                self.label_map = remapped_label_map
+                self.labels = [self.label_map[f] for f in self.image_files]
+                self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
+                self.label_to_indices = {label: [] for label in self.unique_labels}
+                for idx, label in enumerate(self.labels):
+                    self.label_to_indices[label].append(idx)
 
-    # Define a filtered dataset class with remapped labels
-    class FilteredCelebADataset(CelebALabeledDataset):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.image_files = filtered_image_files
-            self.label_map = remapped_label_map
-            self.labels = [self.label_map[f] for f in self.image_files]
-            self.unique_labels = torch.unique(torch.tensor(self.labels)).tolist()
-            self.label_to_indices = {label: [] for label in self.unique_labels}
-            for idx, label in enumerate(self.labels):
-                self.label_to_indices[label].append(idx)
+        return SplitDataset(image_dir, label_file, partition_file=partition_file, partition_id=0, transform=transform)
 
-    # Create train dataset (partition_id=0) with filtered and remapped labels
-    dataset = FilteredCelebADataset(
-        image_dir, label_file,
-        partition_file=partition_file, partition_id=0,
-        output_format=output_format
-    )
-    
-    dataset_length = len(dataset)
-    train_size = int(0.7 * dataset_length)
-    val_size = int(0.15 * dataset_length)
-    test_size = dataset_length - train_size - val_size  # Ensure exact total
+    train_dataset = create_split_dataset(train_ids, train_transform)
+    val_dataset = create_split_dataset(val_ids, eval_transform)
+    test_dataset = create_split_dataset(test_ids, eval_transform)
+    from collections import Counter
+    # ---------- FILTER TRAIN SET ----------
+    label_counts_train = Counter(train_dataset.labels)
+    valid_labels_train = [l for l in label_counts_train if label_counts_train[l] >= m_per_sample]
 
-    # Ensure reproducibility
-    generator = torch.Generator().manual_seed(seed)
+    filtered_indices_train = [i for i, label in enumerate(train_dataset.labels) if label in valid_labels_train]
+    filtered_train_dataset = Subset(train_dataset, filtered_indices_train)
 
-    # Split the dataset
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset, [train_size, val_size, test_size], generator=generator
-    )
-
-    # Create sampler only for training data
     train_sampler = MPerClassSampler(
-        labels=[dataset.labels[i] for i in train_dataset.indices], 
+        labels=[train_dataset.labels[i] for i in filtered_indices_train],
         m=m_per_sample,
         batch_size=batch_size,
-        length_before_new_iter=len(train_dataset)
+        length_before_new_iter=len(filtered_train_dataset)
     )
 
-    train_loader = DataLoader(
-        train_dataset,
+    train_loader = DataLoader(filtered_train_dataset, batch_size=batch_size, sampler=train_sampler, drop_last=True)
+
+    # ---------- FILTER VAL SET ----------
+    label_counts_val = Counter(val_dataset.labels)
+    valid_labels_val = [l for l in label_counts_val if label_counts_val[l] >= m_per_sample]
+
+    filtered_indices_val = [i for i, label in enumerate(val_dataset.labels) if label in valid_labels_val]
+    filtered_val_dataset = Subset(val_dataset, filtered_indices_val)
+
+    val_sampler = MPerClassSampler(
+        labels=[val_dataset.labels[i] for i in filtered_indices_val],
+        m=m_per_sample,
         batch_size=batch_size,
-        sampler=train_sampler,
-        drop_last=True,
-        num_workers=0
+        length_before_new_iter=len(filtered_val_dataset)
     )
-    
-    # For validation and test, use sequential samplers
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,  # Important for evaluation
-        num_workers=0
-    )
-    
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=1,
-        shuffle=True,
-        num_workers=0
-    )
+
+    val_loader = DataLoader(filtered_val_dataset, batch_size=batch_size, sampler=val_sampler, drop_last=True)
+
+    # ---------- TEST SET (optional filtering?) ----------
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=0)
 
     return train_loader, val_loader, test_loader
 
@@ -309,3 +336,70 @@ def create_subset_loader(original_loader, num_samples=1000):
         num_workers=original_loader.num_workers,
         pin_memory=original_loader.pin_memory
     )
+'''
+import yaml
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import logging
+logging.getLogger("mlflow").setLevel(logging.ERROR)  # oder .CRITICAL
+
+# List of modes to run
+MODES = [ "ARCFACE_RESNET_3"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
+
+with open("config/config.yml", "r") as f:
+    config = yaml.safe_load(f)
+
+    # Extract relevant sections
+    PRE = config["PREPROCESSING"]
+
+
+    # Preprocessing config
+    IMAGE_DIR = PRE["image_dir"]
+    LABEL_FILE = PRE["label_file"]
+    PARTITION_FILE = PRE["partition_file"]
+    BATCH_SIZE = 32
+    IMAGE_SIZE = PRE["image_size"]
+    M_PER_SAMPLE = 4
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    NUM_IDENTITY = 500     # Number of unique identities in training
+
+    # Set or create experiment
+
+    # Load train, validation, and t est dataloaders
+    train_loader, val_loader, _ = get_partitioned_dataloaders(
+        image_dir=IMAGE_DIR,
+        label_file=LABEL_FILE,
+        partition_file=PARTITION_FILE,
+        transform=None,
+        m_per_sample=M_PER_SAMPLE,
+        batch_size=BATCH_SIZE,
+        num_identities=NUM_IDENTITY,
+        seed=42
+    )
+    # Get actual image filenames used in train and val loaders
+    train_subset = train_loader.dataset
+    val_subset = val_loader.dataset
+
+    train_dataset = train_subset.dataset
+    train_indices = train_subset.indices
+
+    val_dataset = val_subset.dataset
+    val_indices = val_subset.indices
+
+    train_image_files = {train_dataset.image_files[i] for i in train_indices}
+    val_image_files = {val_dataset.image_files[i] for i in val_indices}
+
+    common_files = train_image_files.intersection(val_image_files)
+
+    print(f"Train set image count: {len(train_image_files)}")
+    print(f"Val set image count: {len(val_image_files)}")
+    print(f"Common images in both: {len(common_files)}")
+
+    if common_files:
+        print("Common image filenames:", list(common_files)[:10])  # Show sample
+    else:
+        print("✅ No overlap in images between train and val loaders.")'''
+
+    
