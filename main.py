@@ -1,6 +1,6 @@
 import torch
 import yaml
-from src.preprocessing.dataLoader_CelebA import get_partitioned_dataloaders
+from src.preprocessing.dataLoader_vi import SiameseNetworkDataset
 from src.ml.own_network import SiameseNetworkOwn
 from src.ml.resNet18 import SiameseNetwork
 from src.ml.loss_utils import ContrastiveLoss, ArcFaceLoss
@@ -12,6 +12,9 @@ import mlflow.pytorch
 import tempfile
 import os
 import numpy as np
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 from colorama import Fore, Style, init
 init(autoreset=True)  # Automatically reset to default color after each print
 
@@ -27,6 +30,90 @@ MODES = [ "CONTRASTIVE_RESNET_5"]   # "_OWN", "_RESNET" #"ARCFACE_OWN",
 import random
 import numpy as np
 import torch
+
+from PIL import Image, ImageFilter, ImageEnhance
+
+## Custom augmentations
+class CenterZoom:
+    def __init__(self, zoom_factor=1.5):
+        self.zoom_factor = zoom_factor
+
+    def __call__(self, img):
+        width, height = img.size
+        new_width = int(width / self.zoom_factor)
+        new_height = int(height / self.zoom_factor)
+        left = (width - new_width) // 2
+        top = (height - new_height) // 2
+        right = left + new_width
+        bottom = top + new_height
+        img = img.crop((left, top, right, bottom))
+        return img.resize((width, height))
+
+
+class RandomRotate:
+    def __init__(self, degrees=15):
+        self.degrees = degrees
+
+    def __call__(self, img):
+        angle = random.uniform(-self.degrees, self.degrees)
+        return img.rotate(angle, resample=Image.BILINEAR, expand=False)
+
+
+class RandomBlur:
+    def __init__(self, max_radius=2):
+        self.max_radius = max_radius
+
+    def __call__(self, img):
+        radius = random.uniform(0, self.max_radius)
+        return img.filter(ImageFilter.GaussianBlur(radius=radius))
+
+
+class RandomBrightnessContrast:
+    def __init__(self, brightness_range=(0.8, 1.2), contrast_range=(0.8, 1.2)):
+        self.brightness_range = brightness_range
+        self.contrast_range = contrast_range
+
+    def __call__(self, img):
+        enhancer = ImageEnhance.Brightness(img)
+        brightness_factor = random.uniform(*self.brightness_range)
+        img = enhancer.enhance(brightness_factor)
+
+        enhancer = ImageEnhance.Contrast(img)
+        contrast_factor = random.uniform(*self.contrast_range)
+        img = enhancer.enhance(contrast_factor)
+        return img
+
+
+class RandomNoise:
+    def __init__(self, noise_level=0.05):
+        self.noise_level = noise_level
+
+    def __call__(self, img):
+        img_np = np.array(img) / 255.0
+        noise = np.random.normal(0, self.noise_level, img_np.shape)
+        noisy_img = img_np + noise
+        noisy_img = np.clip(noisy_img, 0, 1)
+        noisy_img = (noisy_img * 255).astype(np.uint8)
+        return Image.fromarray(noisy_img)
+
+
+train_transform = transforms.Compose([
+    #RandomRotate(degrees=10),  # Increased from 2
+    #CenterZoom(),
+    #transforms.RandomHorizontalFlip(),
+    #transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.Resize([224, 224]),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+eval_transform = transforms.Compose([
+    transforms.Resize([224, 224]),
+    #CenterZoom(),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
+])
 
 def set_seed(seed=42):
     random.seed(seed)
@@ -59,20 +146,13 @@ def run_experiment(MODE):
 
 
         # Preprocessing config
-        IMAGE_DIR = PRE["image_dir"]
-        LABEL_FILE = PRE["label_file"]
-        PARTITION_FILE = PRE["partition_file"]
-        BATCH_SIZE = 32
+        BATCH_SIZE = 64
         IMAGE_SIZE = PRE["image_size"]
-        M_PER_SAMPLE = 8
         DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Training config
-        LR = TRAIN["lr"]
-        SCHEDULING = TRAIN["scheduling"]
-        WEIGHT_DECAY = TRAIN["weight_decay"]
-        NUM_EPOCHS = 100
-        PATIENCE = 6
+        NUM_EPOCHS = 10
+        PATIENCE = 10
         NUM_IDENTITY = 500     # Number of unique identities in training
         if "RESNET" in MODE:
             NETWORK = "resnet"
@@ -86,33 +166,36 @@ def run_experiment(MODE):
     experiment_name = MODE
     mlflow.set_experiment(experiment_name)
 
-    # Load train, validation, and t est dataloaders
-    train_loader, val_loader, _ = get_partitioned_dataloaders(
-        image_dir=IMAGE_DIR,
-        label_file=LABEL_FILE,
-        partition_file=PARTITION_FILE,
-        transform=None,
-        m_per_sample=M_PER_SAMPLE,
-        batch_size=BATCH_SIZE,
-        num_identities=NUM_IDENTITY,
-        seed=42
-    )
+    # Load the training dataset
+    folder_dataset = datasets.ImageFolder(root="data/celeba/output_images_by_label/train/")
+
+    # Initialize the network
+    siamese_dataset = SiameseNetworkDataset(imageFolderDataset=folder_dataset,
+                                            transform=train_transform)
+    train_loader = DataLoader(siamese_dataset, shuffle=True, num_workers=0, batch_size=BATCH_SIZE)
+
+    # Locate the test dataset and load it into the SiameseNetworkDataset
+    folder_dataset_test = datasets.ImageFolder(root="data/celeba/output_images_by_label/val/")
+    siamese_dataset = SiameseNetworkDataset(imageFolderDataset=folder_dataset_test,
+                                            transform=eval_transform)
+    val_loader = DataLoader(siamese_dataset, num_workers=0, batch_size=BATCH_SIZE, shuffle=True)
+
 
     # Initialize the model
     if NETWORK == "resnet":
-        net = SiameseNetwork(loss_type=LOSS_TYPE).to(DEVICE)
+        net = SiameseNetwork().to(DEVICE)
     elif NETWORK == "own":
-        net = SiameseNetworkOwn(loss_type=LOSS_TYPE).to(DEVICE)
+        net = SiameseNetworkOwn().to(DEVICE)
 
     print(Fore.GREEN + f"Selected Network is: {NETWORK}")
 
     # Select the loss function
     if LOSS_TYPE == "contrastive":
-        criterion = ContrastiveLoss(margin=10).to(DEVICE)
+        criterion = ContrastiveLoss(margin=1).to(DEVICE)
     elif LOSS_TYPE == "arcface":
-        criterion = ArcFaceLoss(num_classes=NUM_IDENTITY, embedding_size=256, margin=0.5, scale=64).to(DEVICE)
+        criterion = ArcFaceLoss(num_classes=5000, embedding_size=128, margin=0.5, scale=64).to(DEVICE)
     elif LOSS_TYPE == "multisimilarity":
-        criterion = losses.MultiSimilarityLoss(alpha=70, beta=40.0, base=0.5).to(DEVICE)
+        criterion = losses.MultiSimilarityLoss(alpha=2, beta=50.0, base=0.5).to(DEVICE)
 
     # Initialize loss history trackers
     batch_loss_history = []
@@ -127,8 +210,27 @@ def run_experiment(MODE):
 
     # Optimizer and learning rate scheduler
     # (b) Adjust Learning Rate
-    optimizer = torch.optim.Adam(net.parameters(), lr=0.0005, weight_decay=0.00001)  # 3x higher than current
-    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01)
+    #0.9 and weight decay to 5e−4.
+    #For the ArcFace training, we employ the SGD optimizer 
+    #optimizer = torch.optim.SGD(net.parameters(), lr=0.0005)  # 3x higher than current
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
+    from torch.optim.lr_scheduler import MultiStepLR
+
+    # Optimizer (SGD with momentum and weight decay)
+    optimizer = torch.optim.SGD(
+        net.parameters(),
+        lr=0.1,                # Initial LR
+        momentum=0.9,          # Momentum
+        weight_decay=5e-4      # L2 regularization
+    )
+
+    # LR Scheduler (CASIA example)
+    scheduler = MultiStepLR(
+        optimizer,
+        milestones=[20, 28],   # Epochs to decay LR
+        gamma=0.1              # Divide LR by 10
+    )
+
 
     # Start MLflow run for tracking
     with mlflow.start_run():

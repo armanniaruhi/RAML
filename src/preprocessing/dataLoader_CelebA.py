@@ -402,4 +402,119 @@ with open("config/config.yml", "r") as f:
     else:
         print("✅ No overlap in images between train and val loaders.")'''
 
+
+import os
+import shutil
+from tqdm import tqdm
+from PIL import Image
+
+import os
+import shutil
+import random
+from PIL import Image
+from tqdm import tqdm
+
+def save_images_by_label(dataset, output_dir, max_label=500, seed=42, split=True, move=True):
+    """
+    Saves all images from dataset into folders by label and optionally splits them into train/val/test.
+
+    Args:
+        dataset: An instance of a dataset with image_files, labels, and image_dir attributes.
+        output_dir (str): Where to save all the data.
+        max_label (int): Only process labels ≤ max_label.
+        seed (int): Random seed for shuffling.
+        split (bool): Whether to split folders into train/val/test.
+        move (bool): Whether to move instead of copy when splitting.
+    """
+    # Step 0: If output_dir exists, delete it completely
+    if os.path.exists(output_dir):
+        print(f"⚠️ Deleting existing output directory: {output_dir}")
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Step 1: Save images grouped by label
+    print("Saving images into label folders...")
+    for idx in tqdm(range(len(dataset)), desc="Saving images"):
+        try:
+            filename = dataset.image_files[idx]
+            label = dataset.labels[idx]
+
+            if label > max_label:
+                continue
+
+            label_folder = os.path.join(output_dir, str(label))
+            os.makedirs(label_folder, exist_ok=True)
+
+            src_path = os.path.join(dataset.image_dir, filename)
+            dst_path = os.path.join(label_folder, filename)
+
+            # Verify and save image
+            img = Image.open(src_path)
+            img.save(dst_path)
+        except Exception as e:
+            print(f"Failed to save image {filename}: {e}")
+
+    if not split:
+        return
+
+    # Step 2: Split folders into train/val/test
+    print("\nSplitting folders into train/val/test...")
+
+    label_folders = [f for f in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, f))]
+    label_folders = [f for f in label_folders if f.isdigit() and int(f) <= max_label]
+
+    random.seed(seed)
+    label_folders.sort()
+    random.shuffle(label_folders)
+
+    total = len(label_folders)
+    n_train = int(0.8 * total)
+    n_val = int(0.15 * total)
+    n_test = total - n_train - n_val
+
+    splits = {
+        'train': label_folders[:n_train],
+        'val': label_folders[n_train:n_train + n_val],
+        'test': label_folders[n_train + n_val:]
+    }
+
+    for split_name, folders in splits.items():
+        for folder in tqdm(folders, desc=f"Moving to {split_name}"):
+            src_folder = os.path.join(output_dir, folder)
+            dst_folder = os.path.join(output_dir, split_name, folder)
+            os.makedirs(os.path.dirname(dst_folder), exist_ok=True)
+
+            if move:
+                shutil.move(src_folder, dst_folder)
+            else:
+                shutil.copytree(src_folder, dst_folder)
+
+    # Step 3: Remove original label folders (only if copied)
+    if not move:
+        print("\nRemoving original label folders...")
+        for folder in label_folders:
+            original_path = os.path.join(output_dir, folder)
+            if os.path.isdir(original_path):
+                shutil.rmtree(original_path)
+
+    print(f"\n✅ Done! Split {total} folders into: {n_train} train, {n_val} val, {n_test} test.")
+
+
+
+
+
+image_dir= "data/celeba/img_align_celeba"
+label_file= "data/celeba/identity_CelebA.txt"
+partition_file= "data/celeba/list_eval_partition.csv"
+dataset = CelebALabeledDataset(
+    image_dir,
+    label_file,
+    partition_file,
+    partition_id=0
+)
+
+save_images_by_label(dataset, output_dir="data/celeba/output_images_by_label", max_label=2000)
+
+
     
