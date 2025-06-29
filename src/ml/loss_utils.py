@@ -38,7 +38,7 @@ class ArcFaceLoss(nn.Module):
         self.W = nn.Parameter(torch.Tensor(num_classes, embedding_size))
         nn.init.xavier_normal_(self.W)
         
-    def forward(self, embedding1, embedding2, label1, label2):
+    def forward(self, embeddings, labels):
         """
         Args:
             embeddings: (None, embedding_size)
@@ -47,8 +47,7 @@ class ArcFaceLoss(nn.Module):
             loss: scalar
         """
         # Concatenate embeddings with label information
-        embeddings = torch.cat([embedding1, embedding2])
-        labels = torch.cat([label1, label2])
+        
         cosine = self.get_cosine(embeddings) # (None, n_classes)
         mask = self.get_target_mask(labels) # (None, n_classes)
         cosine_of_target_classes = cosine[mask == 1] # (None, )

@@ -504,17 +504,176 @@ def save_images_by_label(dataset, output_dir, max_label=500, seed=42, split=True
 
 
 
-image_dir= "data/celeba/img_align_celeba"
-label_file= "data/celeba/identity_CelebA.txt"
-partition_file= "data/celeba/list_eval_partition.csv"
-dataset = CelebALabeledDataset(
-    image_dir,
-    label_file,
-    partition_file,
-    partition_id=0
-)
+import os
+import shutil
+from PIL import Image, ImageTk
+import tkinter as tk
+from tqdm import tqdm
 
-save_images_by_label(dataset, output_dir="data/celeba/output_images_by_label", max_label=2000)
+class ManualCropper:
+    def __init__(self, image_paths, output_dir, crop_size=(92, 112), scale=1.5, coord_file="crop_coordinates.txt"):
+        self.image_paths = image_paths
+        self.output_dir = output_dir
+        self.crop_size = crop_size
+        self.scale = scale
+        self.coord_file = coord_file
+
+        self.root = tk.Tk()
+        self.root.title("Manual Crop Tool")
+        self.root.attributes("-fullscreen", True)  # Fullscreen
+
+        # Canvas for showing images
+        self.canvas = tk.Canvas(self.root)
+        self.canvas.pack(fill="both", expand=True)
+
+        # Initialize variables
+        self.current_index = 0
+        self.offset = [0, 0]
+        self.crop_done = False
+        self.coord_log = []
+
+        # Load first image
+        self.load_image(self.current_index)
+
+        # Bind events
+        self.canvas.bind("<Motion>", self.on_mouse_move)
+        self.canvas.bind("<Button-1>", self.on_click)
+        self.root.bind("<Escape>", lambda e: self.root.destroy())
+
+        self.root.mainloop()
+
+    def load_image(self, idx):
+        img_path = self.image_paths[idx]
+        self.img = Image.open(img_path).convert("L")
+        self.orig_w, self.orig_h = self.img.size
+        self.scaled_w, self.scaled_h = int(self.orig_w * self.scale), int(self.orig_h * self.scale)
+        self.resized_img = self.img.resize((self.scaled_w, self.scaled_h), Image.LANCZOS)
+        self.tk_img = ImageTk.PhotoImage(self.resized_img)
+
+        # Configure canvas size
+        self.canvas.config(width=self.scaled_w, height=self.scaled_h)
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+
+        # Crop box rectangle
+        box_w, box_h = self.crop_size
+        self.box_w_scaled = int(box_w * self.scale)
+        self.box_h_scaled = int(box_h * self.scale)
+
+        self.rect = self.canvas.create_rectangle(0, 0, self.box_w_scaled, self.box_h_scaled, outline="red", width=2)
+
+        # Reset offset
+        self.offset = [0, 0]
+
+        # Update title with current image path
+        self.root.title(f"Manual Crop Tool - {os.path.basename(img_path)} ({idx+1}/{len(self.image_paths)})")
+
+    def on_mouse_move(self, event):
+        x1 = max(0, min(event.x - self.box_w_scaled // 2, self.scaled_w - self.box_w_scaled))
+        y1 = max(0, min(event.y - self.box_h_scaled // 2, self.scaled_h - self.box_h_scaled))
+        x2 = x1 + self.box_w_scaled
+        y2 = y1 + self.box_h_scaled
+        self.canvas.coords(self.rect, x1, y1, x2, y2)
+        self.offset[0] = int(x1 / self.scale)
+        self.offset[1] = int(y1 / self.scale)
+
+    def on_click(self, event):
+        # Crop current image
+        crop_box = (self.offset[0], self.offset[1], self.offset[0] + self.crop_size[0], self.offset[1] + self.crop_size[1])
+        cropped_img = self.img.crop(crop_box)
+
+        # Compute relative path and save path
+        input_dir = os.path.commonpath(self.image_paths)
+        rel_path = os.path.relpath(self.image_paths[self.current_index], start=input_dir)
+        base_name = os.path.splitext(rel_path)[0] + ".pgm"
+        save_path = os.path.join(self.output_dir, base_name)
+
+        # Ensure output folder exists
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        # Save cropped image
+        cropped_img.save(save_path, format="PPM")
+
+        # Log coords
+        self.coord_log.append(f"{rel_path} {self.offset[0]} {self.offset[1]}")
+
+        # Move to next image or quit
+        self.current_index += 1
+        if self.current_index >= len(self.image_paths):
+            self.save_coordinates()
+            print("✅ Cropping complete. Coordinates saved.")
+            self.root.destroy()
+        else:
+            self.load_image(self.current_index)
 
 
-    
+    def save_coordinates(self):
+        with open(self.coord_file, "w") as f:
+            for entry in self.coord_log:
+                f.write(entry + "\n")
+
+
+def crop_images_in_folder_single_window(input_dir, output_dir, existing_label_dir=None, crop_size=(92, 112), coord_file="crop_coordinates.txt", scale=1.5):
+    """
+    Recursively find .pgm images in input_dir,
+    skip labels present in existing_label_dir,
+    and manually crop images in a single Tkinter window session.
+    """
+    if not os.path.exists(input_dir):
+        print(f"❌ Input directory does not exist: {input_dir}")
+        return
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    all_img_paths = []
+    skipped_labels = set()
+
+    for root_dir, _, files in os.walk(input_dir):
+        for f in files:
+            if f.lower().endswith('.pgm'):
+                full_path = os.path.join(root_dir, f)
+                rel_path = os.path.relpath(full_path, input_dir)
+                label = rel_path.split(os.sep)[0]
+
+                if existing_label_dir:
+                    label_check_path = os.path.join(existing_label_dir, label)
+                    if os.path.exists(label_check_path):
+                        skipped_labels.add(label)
+                        continue
+
+                all_img_paths.append(full_path)
+
+    print(f"🔍 Found {len(all_img_paths)} .pgm images to crop.")
+    print(f"⏩ Skipped {len(skipped_labels)} label(s) found in existing directory: {existing_label_dir}")
+
+    if len(all_img_paths) == 0:
+        print("No images to crop.")
+        return
+
+    cropper = ManualCropper(
+        image_paths=all_img_paths,
+        output_dir=output_dir,
+        crop_size=crop_size,
+        scale=scale,
+        coord_file=coord_file
+    )
+
+
+#=== Example usage ===
+'''
+crop_images_in_folder_single_window(
+    input_dir="data/faces/celebA/train",
+    output_dir="data/faces/celebA_cropped",
+            existing_label_dir="data/faces/all",
+    crop_size=(120, 150),
+    coord_file="crop_coordinates.txt" )
+'''
+
+
+# === Example usage ===
+
+# Step 1: Save original grayscale images by label (no cropping yet)
+#save_images_by_label_gray(dataset, output_dir="data/faces/celebA", max_label=1000, samples_per_label=10)
+
+
