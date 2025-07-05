@@ -663,10 +663,10 @@ def crop_images_in_folder_single_window(input_dir, output_dir, existing_label_di
 
 #=== Example usage ===
 crop_images_in_folder_single_window(
-    input_dir="data/faces/celebA/train",
-    output_dir="data/faces/celebA_cropped",
+    input_dir="data/faces/test",
+    output_dir="data/faces/test",
             existing_label_dir="data/faces/all",
-    crop_size=(100, 130),
+    crop_size=(92, 132),
     coord_file="crop_coordinates.txt" )
 
 

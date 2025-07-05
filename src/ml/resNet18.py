@@ -1,41 +1,76 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torchvision.models import resnet18, ResNet18_Weights
-from transformers import ResNetForImageClassification
-
+from torchvision.models import resnet18
 
 class SiameseNetwork(nn.Module):
-    def __init__(self, model_path = "microsoft/resnet-50", stages_resnet=3, fc_dim=512, out_dim = 256):
+    def __init__(self):
         super(SiameseNetwork, self).__init__()
-        resnet_cnn = ResNetForImageClassification.from_pretrained(model_path).resnet
-
-        self.pretrained_cnn = nn.Sequential(*([resnet_cnn.embedder]+[resnet_cnn.encoder.stages[s] for s in range(stages_resnet)]) )
-        for param in self.pretrained_cnn.parameters():
-            param.requires_grad_(False); 
-
-        # self.siamese_cnn = nn.Sequential(*[resnet_cnn.encoder.stages[s] for s in range(stages_resnet,len(resnet_cnn.encoder.stages))])
-        self.siamese_cnn = nn.Sequential(*[resnet_cnn.encoder.stages[stages_resnet].layers[0], nn.AdaptiveAvgPool2d(output_size=(1, 1))])
-
-        self.cnn = nn.Sequential(self.pretrained_cnn, self.siamese_cnn)
-
+        
+        # Using ResNet18 as the backbone with 3-channel input
+        self.cnn1 = resnet18(pretrained=True)  # Using pretrained weights
+        
+        # Remove the original fully connected layer of ResNet18
+        self.cnn1.fc = nn.Identity()
+        
+        # Setting up your custom Fully Connected Layers
+        # ResNet18 outputs 512 features
         self.fc1 = nn.Sequential(
-            nn.Linear(2048, fc_dim),
+            nn.Linear(512, 1024),
             nn.ReLU(inplace=True),
+            nn.Linear(1024, 256),
+        )
 
-            nn.Linear(fc_dim, fc_dim),
-            nn.ReLU(inplace=True),
-
-            nn.Linear(fc_dim, out_dim))
-
+        self.bn = nn.BatchNorm1d(256)
+        
     def forward_once(self, x):
-        output = self.cnn(x)
+        # Forward pass through ResNet18
+        output = self.cnn1(x)
+        # Flatten the output
         output = output.view(output.size()[0], -1)
+        # Forward pass through custom FC layers
         output = self.fc1(output)
+     
         return output
-
+    
     def forward(self, input1, input2):
+        # Forward pass for both inputs
         output1 = self.forward_once(input1)
         output2 = self.forward_once(input2)
         return output1, output2
+
+
+class SiameseNetwork_contrastive(nn.Module):
+    def __init__(self):
+        super(SiameseNetwork_contrastive, self).__init__()
         
+        # Using ResNet18 as the backbone with 3-channel input
+        self.cnn1 = resnet18(pretrained=True)  # Using pretrained weights
+        
+        # Remove the original fully connected layer of ResNet18
+        self.cnn1.fc = nn.Identity()
+        
+        # Setting up your custom Fully Connected Layers
+        # ResNet18 outputs 512 features
+        self.fc1 = nn.Sequential(
+            nn.Linear(512, 1024),
+            nn.ReLU(inplace=True),
+            nn.Linear(1024, 256),
+        )
+        
+    def forward_once(self, x):
+        # Forward pass through ResNet18
+        output = self.cnn1(x)
+        # Flatten the output
+        output = output.view(output.size()[0], -1)
+        # Forward pass through custom FC layers
+        output = self.fc1(output)
+        return output
+    
+    def forward(self, input1, input2):
+        # Forward pass for both inputs
+        output1 = self.forward_once(input1)
+        output2 = self.forward_once(input2)
+        #output1 = F.normalize(output1, p=2, dim=1)
+        #output2 = F.normalize(output2, p=2, dim=1)
+        return output1, output2
+    
+
