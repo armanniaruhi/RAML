@@ -660,20 +660,18 @@ def crop_images_in_folder_single_window(input_dir, output_dir, existing_label_di
     )
 
 
+
 #=== Example usage ===
-'''
 crop_images_in_folder_single_window(
     input_dir="data/faces/celebA/train",
     output_dir="data/faces/celebA_cropped",
             existing_label_dir="data/faces/all",
-    crop_size=(120, 150),
+    crop_size=(100, 130),
     coord_file="crop_coordinates.txt" )
-'''
 
 
 # === Example usage ===
 
 # Step 1: Save original grayscale images by label (no cropping yet)
 #save_images_by_label_gray(dataset, output_dir="data/faces/celebA", max_label=1000, samples_per_label=10)
-
 
