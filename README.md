@@ -7,7 +7,7 @@ To set up the required Conda environment, follow these steps:
 
 
 2. **Download the models**  
-   Download our trained models [MODELS]([https://drive.google.com/file/d/1oLIfYo21w744liIEN9EZi5i4Ej4shDQX/view?usp=share_link](https://drive.google.com/file/d/1ewfgJhApXS-5rkD-_ZjzqGMBO7dV6C6o/view?usp=sharing)), and copy the entire `models` folder into the root directory of the project.
+   Download our trained models [MODELS](https://drive.google.com/file/d/1ewfgJhApXS-5rkD-_ZjzqGMBO7dV6C6o/view?usp=sharing), and copy the entire `models` folder into the root directory of the project.
 
 3. **Install Conda**  
    Make sure you have Conda installed. If not, you can download and install it from the [official Conda installation guide](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html).
