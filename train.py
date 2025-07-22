@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Refactored and modularized training script for Siamese Network with cross-validation,
 MLflow logging, and optional pretrained loading.
