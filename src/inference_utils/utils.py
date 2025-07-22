@@ -1,37 +1,49 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
+# --- Standard Library Imports ---
 from itertools import combinations
-import torch
-import torch.nn.functional as F
-import pandas as pd
 import warnings
+
+# --- Suppress Specific Warnings ---
 from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
-import torch
-import torch.nn.functional as F
-import numpy as np, pandas as pd, matplotlib.pyplot as plt
-from sklearn.metrics import (
-    roc_curve, auc, average_precision_score,
-    confusion_matrix, accuracy_score, f1_score,
-    precision_score, recall_score
-)
+# --- Data Handling ---
+import pandas as pd
 import numpy as np
+
+# --- PyTorch ---
 import torch
 import torch.nn.functional as F
+
+# --- Evaluation Metrics ---
+from sklearn.metrics import (
+    roc_curve,
+    auc,
+    average_precision_score,
+    confusion_matrix,
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score
+)
+
+# --- Visualization ---
 import matplotlib.pyplot as plt
 
+# --- Device Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# Color mapping for consistent use in ROC and bar plots
+
+# --- Color Mapping for Model Names ---
 colors = {
-    "Contrastive": "#63AAC0",   
-    "MS-Loss":    "#F99B45",   
-    "Circle-Loss":"#284E60"    
+    "Contrastive": "#63AAC0",    # Blue tone
+    "MS-Loss":     "#F99B45",    # Orange tone
+    "Circle-Loss": "#284E60"     # Dark teal tone
 }
 
 
 def compute_matrix(embeddings, loss_type):
+    """
+    Compute a similarity or distance matrix based on the loss type.
+    """
     if loss_type == "Contrastive":
         dists = torch.cdist(embeddings, embeddings, p=2)
         dists.fill_diagonal_(0.0)
@@ -45,23 +57,29 @@ def compute_matrix(embeddings, loss_type):
 
 
 def add_thumbnails(ax, images, side="left", pad=0.003):
-    fig, n     = ax.figure, len(images)
-    axpos      = ax.get_position()
-    cell_size  = (axpos.height if side=="left" else axpos.width) / n
+    """
+    Add small image thumbnails to a heatmap axis.
+    """
+    fig, n = ax.figure, len(images)
+    axpos = ax.get_position()
+    cell_size = (axpos.height if side == "left" else axpos.width) / n
 
     for i, img in enumerate(images):
         if side == "left":
             x0 = axpos.x0 - pad - cell_size
-            y0 = axpos.y0 + axpos.height - (i+1)*cell_size
+            y0 = axpos.y0 + axpos.height - (i + 1) * cell_size
         else:
-            x0 = axpos.x0 + i*cell_size
+            x0 = axpos.x0 + i * cell_size
             y0 = axpos.y1 + pad
         thumb = fig.add_axes([x0, y0, cell_size, cell_size])
         thumb.imshow(np.asarray(img))
         thumb.axis("off")
-        
+
 
 def collect_scores(model, dataloader, device, sim='cosine'):
+    """
+    Collect similarity/distance scores and labels from the model using a dataloader.
+    """
     model.eval()
     scores, labels = [], []
     with torch.no_grad():
@@ -69,7 +87,7 @@ def collect_scores(model, dataloader, device, sim='cosine'):
             img1, img2 = img1.to(device), img2.to(device)
             e1, e2 = model(img1, img2)
             if sim == 'cosine':
-                s = -F.cosine_similarity(e1, e2)  # flip so larger→dissimilar
+                s = -F.cosine_similarity(e1, e2)  # Negated so that higher = more dissimilar
             else:
                 s = F.pairwise_distance(e1, e2)
             scores.extend(s.cpu().numpy())
@@ -78,6 +96,9 @@ def collect_scores(model, dataloader, device, sim='cosine'):
 
 
 def collect_scores_fixed(model, pairs, sim='cosine'):
+    """
+    Collect similarity/distance scores and labels from a fixed list of image pairs.
+    """
     model.eval()
     scores, labels = [], []
     with torch.no_grad():
@@ -93,7 +114,10 @@ def collect_scores_fixed(model, pairs, sim='cosine'):
 
 
 def metrics_at_threshold(scores, labels, thr):
-    preds = scores > thr  # 1 = dissimilar
+    """
+    Compute accuracy, precision, recall, and F1-score at a given threshold.
+    """
+    preds = scores > thr  # Predict 1 if dissimilar
     return (
         accuracy_score(labels, preds),
         precision_score(labels, preds, zero_division=0),
@@ -103,88 +127,109 @@ def metrics_at_threshold(scores, labels, thr):
 
 
 def evaluate_models(model_paths, dataloader, device, show_plot=True, show_cm=True):
+    """
+    Evaluate all models in model_paths using ROC, optimal threshold, and classification metrics.
+    """
     rows = []
     if show_plot:
-        plt.figure(figsize=(7,7))
+        plt.figure(figsize=(7, 7))
+
     for name, model in model_paths.items():
         sim = 'euclid' if name == "Contrastive" else 'cosine'
         scores, labels = collect_scores(model, dataloader, device, sim=sim)
         fpr, tpr, thr = roc_curve(labels, scores)
+
         if show_plot:
             plt.plot(fpr, tpr,
-                     label=f"{name} (AUROC={auc(fpr,tpr):.3f})",
+                     label=f"{name} (AUROC={auc(fpr, tpr):.3f})",
                      color=colors[name])
-        # find best F1 threshold
+
+        # Find best threshold by F1-score
         f1s = [metrics_at_threshold(scores, labels, t)[-1] for t in thr]
         best_thr = thr[int(np.nanargmax(f1s))]
         acc, prec, rec, f1 = metrics_at_threshold(scores, labels, best_thr)
         auprc = average_precision_score(labels, scores)
+
         rows.append({
             'model': name,
             'accuracy': acc,
             'precision': prec,
             'recall': rec,
             'F1': f1,
-            'AUROC': auc(fpr,tpr),
+            'AUROC': auc(fpr, tpr),
             'AUPRC': auprc,
             'opt_threshold': float(best_thr)
         })
+
         if show_cm:
             cm = confusion_matrix(labels, scores > best_thr)
             print(f"\nConfusion Matrix – {name} (thr={best_thr:.3f})\n", cm)
+
     if show_plot:
-        plt.plot([0,1], [0,1], '--', color='gray')
+        plt.plot([0, 1], [0, 1], '--', color='gray')
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
         plt.title("ROC comparison – all models")
         plt.legend()
         plt.grid(True)
         plt.show()
+
     return pd.DataFrame(rows).set_index('model').round(3)
 
 
 def evaluate_models_fixed(model_paths, pairs, show_plot=True, show_cm=True):
+    """
+    Same as evaluate_models but for a fixed list of image pairs (no dataloader).
+    """
     rows = []
     if show_plot:
-        plt.figure(figsize=(7,7))
+        plt.figure(figsize=(7, 7))
+
     for name, model in model_paths.items():
         sim = 'euclid' if name == "Contrastive" else 'cosine'
         scores, labels = collect_scores_fixed(model, pairs, sim=sim)
         fpr, tpr, thr = roc_curve(labels, scores)
+
         if show_plot:
             plt.plot(fpr, tpr,
-                     label=f"{name} (AUROC={auc(fpr,tpr):.3f})",
+                     label=f"{name} (AUROC={auc(fpr, tpr):.3f})",
                      color=colors[name])
+
         f1s = [metrics_at_threshold(scores, labels, t)[-1] for t in thr]
         best_thr = thr[int(np.nanargmax(f1s))]
         acc, prec, rec, f1 = metrics_at_threshold(scores, labels, best_thr)
         auprc = average_precision_score(labels, scores)
+
         rows.append({
             'model': name,
             'accuracy': acc,
             'precision': prec,
             'recall': rec,
             'F1': f1,
-            'AUROC': auc(fpr,tpr),
+            'AUROC': auc(fpr, tpr),
             'AUPRC': auprc,
             'opt_threshold': float(best_thr)
         })
+
         if show_cm:
             cm = confusion_matrix(labels, scores > best_thr)
             print(f"\nConfusion Matrix – {name} (thr={best_thr:.3f})\n", cm)
+
     if show_plot:
-        plt.plot([0,1], [0,1], '--', color='gray')
+        plt.plot([0, 1], [0, 1], '--', color='gray')
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
         plt.legend()
         plt.grid(True)
         plt.show()
+
     return pd.DataFrame(rows).set_index('model').round(3)
 
 
-
 def plot_grouped_metrics(summary_df):
-    """Grouped bar chart: für jede Metrik vier Balken (je Loss-Funktion)."""
+    """
+    Grouped bar plot comparing multiple models on accuracy, precision, recall, and F1.
+    """
     metrics = ['accuracy', 'precision', 'recall', 'F1']
     models = summary_df.index.tolist()
 
@@ -193,40 +238,41 @@ def plot_grouped_metrics(summary_df):
     bar_width = 0.8 / n_models
     x = np.arange(n_metrics)
 
-    plt.figure(figsize=(9,5))
+    plt.figure(figsize=(9, 5))
     for i, model in enumerate(models):
         values = summary_df.loc[model, metrics].values
         bars = plt.bar(
-            x + i*bar_width,
+            x + i * bar_width,
             values,
             width=bar_width,
             label=model,
             color=colors[model]
         )
-        # Werte über die Balken schreiben
+        # Annotate each bar with its value
         for bar in bars:
             h = bar.get_height()
             plt.text(
-                bar.get_x() + bar.get_width()/2,
+                bar.get_x() + bar.get_width() / 2,
                 h + 0.02,
                 f"{h:.2f}",
                 ha='center', va='bottom', fontsize=9
             )
 
     plt.xticks(
-        x + bar_width*(n_models-1)/2,
-        ['Accuracy','Precision','Recall','F1'],
+        x + bar_width * (n_models - 1) / 2,
+        ['Accuracy', 'Precision', 'Recall', 'F1'],
         rotation=0
     )
     plt.ylim(0, 1)
     plt.ylabel('Score')
-    plt.legend(title='Loss-Funktion', bbox_to_anchor=(1.02, 1), loc='upper left')
+    plt.legend(title='Loss Function', bbox_to_anchor=(1.02, 1), loc='upper left')
     plt.tight_layout()
     plt.show()
-    
+
+
 def compute_intra_inter(dataloader, model, loss_key):
     """
-    Computes intra-class and inter-class distances for embeddings produced by the model.
+    Computes intra-class and inter-class distances based on embeddings from the model.
     """
     model.eval()
     all_emb, all_lbl = [], []
@@ -236,18 +282,18 @@ def compute_intra_inter(dataloader, model, loss_key):
             out0, out1 = model(img0, img1)
             all_emb.append(torch.cat([out0, out1]))
             all_lbl.append(torch.cat([l0.to(DEVICE), l1.to(DEVICE)]))
-    
+
     emb = torch.cat(all_emb)
     lbl = torch.cat(all_lbl)
 
-    # Group embeddings by class
+    # Group embeddings by label
     cls2emb = {}
     for e, v in zip(emb, lbl):
         cls2emb.setdefault(int(v), []).append(e)
     for k in cls2emb:
         cls2emb[k] = torch.stack(cls2emb[k])
 
-    # Select metric based on loss type
+    # Choose distance metric
     if loss_key == "Contrastive":
         metric = F.pairwise_distance
         xlabel = "Euclidean Distance"
@@ -276,7 +322,7 @@ def compute_intra_inter(dataloader, model, loss_key):
     intra = np.array(intra)
     inter = np.array(inter)
 
-    # Balance the number of intra and inter distances
+    # Balance both distributions to same length
     min_len = min(len(intra), len(inter))
     if len(intra) != len(inter):
         idx_intra = np.random.choice(len(intra), min_len, replace=False)
@@ -286,15 +332,16 @@ def compute_intra_inter(dataloader, model, loss_key):
 
     return intra, inter, xlabel
 
+
 def separation_metrics(intra, inter):
     """
-    Calculates separation metrics: means, std devs, Fisher ratio, Bhattacharyya coefficient.
+    Compute separation metrics: means, stds, Fisher ratio, Bhattacharyya coefficient.
     """
     mu_in, mu_it = intra.mean(), inter.mean()
     sd_in, sd_it = intra.std(), inter.std()
     fisher = (mu_it - mu_in)**2 / (sd_it**2 + sd_in**2 + 1e-8)
 
-    # Bhattacharyya Coefficient
+    # Bhattacharyya coefficient calculation
     term1 = 0.25 * np.log(0.25 * (sd_in**2 / sd_it**2 + sd_it**2 / sd_in**2 + 2))
     term2 = 0.25 * ((mu_in - mu_it)**2 / (sd_in**2 + sd_it**2 + 1e-8))
     bc = np.exp(-(term1 + term2))

@@ -181,7 +181,7 @@ def train_fold(model, criterion, optimizer, train_loader, val_loader,
     return metrics, best_state
 
 
-def cross_validate(dataset, config, device):
+def train_validate(dataset, config, device):
     """Run K-Fold cross-validation and return summary metrics and best model state."""
     k_folds = config.get('k_folds', 5)
     kfold = KFold(n_splits=k_folds, shuffle=True)
@@ -259,13 +259,17 @@ def main():
     dataset = prepare_dataset(root='dataset/train', transform=create_transform())
 
     if not config['PRETRAINED']:
-        all_results, best_state = cross_validate(dataset, config, device)
+        train_validate(dataset, config, device)
         print("Training complete. Best model saved.")
     else:
         print(Fore.YELLOW + "Loading pretrained model..." + Style.RESET_ALL)
         os.makedirs(f"models_{config['LOSS_TYPE']}", exist_ok=True)
         model, _ = build_model_and_loss(config['LOSS_TYPE'], device)
-        model.load_state_dict(torch.load(f"models_{config['LOSS_TYPE']}/best_overall.pt", map_location=device))
+        if config['LOSS_TYPE'] == 'MultiSimilarity':
+            loss_type = "ms"
+        else:
+            loss_type = config['LOSS_TYPE']
+        model.load_state_dict(torch.load(f"models/models_{loss_type.lower()}/best_model_overall.pt", map_location=device))
         plot_samples_with_metrics(dataset, model, device)
 
 if __name__ == '__main__':
