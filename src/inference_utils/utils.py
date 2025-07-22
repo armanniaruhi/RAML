@@ -1,20 +1,20 @@
-# --- Standard Library Imports ---
+# Standard Library Imports  
 from itertools import combinations
 import warnings
 
-# --- Suppress Specific Warnings ---
+# Suppress Specific Warnings  
 from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
-# --- Data Handling ---
+# Data Handling  
 import pandas as pd
 import numpy as np
 
-# --- PyTorch ---
+# PyTorch  
 import torch
 import torch.nn.functional as F
 
-# --- Evaluation Metrics ---
+# Evaluation Metrics  
 from sklearn.metrics import (
     roc_curve,
     auc,
@@ -26,13 +26,13 @@ from sklearn.metrics import (
     recall_score
 )
 
-# --- Visualization ---
+# Visualization  
 import matplotlib.pyplot as plt
 
-# --- Device Configuration ---
+# Device Configuration  
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --- Color Mapping for Model Names ---
+# Color Mapping for Model Names  
 colors = {
     "Contrastive": "#63AAC0",    # Blue tone
     "MS-Loss":     "#F99B45",    # Orange tone

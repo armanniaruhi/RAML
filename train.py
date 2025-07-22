@@ -50,7 +50,6 @@ def create_transform() -> transforms.Compose:
     """Define image augmentation and preprocessing pipeline."""
     return transforms.Compose([
         transforms.RandomHorizontalFlip(0.5),
-        transforms.ColorJitter(0.3, 0.3, 0.3, 0.1),
         transforms.Resize((100, 100)),
         transforms.ToTensor(),
         transforms.RandomErasing(p=0.2, scale=(0.02, 0.1), ratio=(0.1, 2.3), value='random')
@@ -263,7 +262,6 @@ def main():
         print("Training complete. Best model saved.")
     else:
         print(Fore.YELLOW + "Loading pretrained model..." + Style.RESET_ALL)
-        os.makedirs(f"models_{config['LOSS_TYPE']}", exist_ok=True)
         model, _ = build_model_and_loss(config['LOSS_TYPE'], device)
         if config['LOSS_TYPE'] == 'MultiSimilarity':
             loss_type = "ms"
