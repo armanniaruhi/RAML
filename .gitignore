@@ -5,7 +5,7 @@
 *.html
 
 # Ignored directories
-/data/
+/dataset/
 /models/
 /mlruns/
 
