@@ -1,4 +1,4 @@
-LOSS_TYPE: "Circle"     # Options: "Circle", "MultiSimilarity", "Contrastive"
+LOSS_TYPE: "Contrastive"     # Options: "Circle", "MultiSimilarity", "Contrastive"
 EARLY_STOP: false                # Enable or disable early stopping
 PATIENCE: 5                      # Epochs to wait for improvement before stopping
 NUM_EPOCHS: 60                   # Total training epochs
