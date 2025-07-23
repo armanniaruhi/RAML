@@ -13,3 +13,7 @@
 
 models.zip
 models/*.pth
+
+/.idea/
+/.vscode/
+/data/

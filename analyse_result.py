@@ -2,14 +2,13 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import stats
+import seaborn as sns
 
 # Create output directories if they don't exist
 os.makedirs("results/plots", exist_ok=True)
 os.makedirs("results/tables", exist_ok=True)
 
-# Minimalist style with tiny but readable fonts
-plt.style.use('seaborn-paper')
+sns.set_theme(style="whitegrid", context="paper")
 plt.rcParams.update({
     'font.family': 'serif',
     'font.serif': [
@@ -18,7 +17,7 @@ plt.rcParams.update({
         'Times New Roman',
         'serif'
     ],
-    'font.size': 2,
+    'font.size': 5,
     'axes.labelsize': 4,
     'axes.titlesize': 4,
     'xtick.labelsize': 3,
@@ -28,7 +27,7 @@ plt.rcParams.update({
     'figure.dpi': 300,
     'lines.linewidth': 0.2,
     'axes.grid': True,
-    'grid.alpha': 0.1,
+    'grid.alpha': 0.4,
     'axes.titlepad': 3,
     'axes.labelpad': 2,
 })
@@ -41,7 +40,7 @@ pivot_df = df.pivot_table(index=['run_id', 'step'], columns='key', values='value
 # Get metrics and runs
 all_metrics = [col for col in pivot_df.columns if col not in ['run_id', 'step']]
 run_ids = pivot_df['run_id'].unique()
-colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+colors = ["#062f4d", "#1993b8", '#ff7f0e']
 
 # =============================================
 # ANALYSIS FUNCTIONS
@@ -89,11 +88,12 @@ def create_comparison_tables(pivot_df, output_dir):
 
 def plot_loss_comparison(pivot_df, output_dir):
     """Plot loss comparison across runs"""
+    colors = ['#1f77b4', '#ff7f0e']
     if len(run_ids) > 0:
         ncols = min(3, len(run_ids))
         nrows = int(np.ceil(len(run_ids)/ncols))
         
-        fig, axs = plt.subplots(nrows, ncols, figsize=(3.5, 1.5*nrows), squeeze=False)
+        fig, axs = plt.subplots(nrows, ncols, figsize=(4, 1.5*nrows), squeeze=False)
         
         for idx, run_id in enumerate(run_ids):
             row = idx // ncols
@@ -103,9 +103,9 @@ def plot_loss_comparison(pivot_df, output_dir):
             run_data = pivot_df[pivot_df['run_id']==run_id].sort_values('step')
             
             ax.plot(run_data['step'], run_data['training loss'], 
-                   color=colors[0], linewidth=0.8, label='Train loss')
+                   color=colors[0], linewidth=0.6, label='Train loss')
             ax.plot(run_data['step'], run_data['validation loss'], 
-                   color=colors[1], linewidth=0.8, label='Validation loss')
+                   color=colors[1], linewidth=0.6, label='Validation loss')
             
             y_pad = 0.05*(run_data['training loss'].max() - run_data['training loss'].min())
             ax.set_ylim([
@@ -113,7 +113,7 @@ def plot_loss_comparison(pivot_df, output_dir):
                 max(run_data['training loss'].max(), run_data['validation loss'].max()) + y_pad
             ])
             
-            ax.set_title(run_id, pad=2, fontsize=3)
+            ax.set_title(run_id, pad=2, fontsize=7)
             ax.set_xlabel('Step', labelpad=1)
             ax.set_ylabel('Loss', labelpad=1)
             ax.legend(loc='upper right', handlelength=0.5, handletextpad=0.2)
@@ -134,7 +134,7 @@ def plot_loss_comparison(pivot_df, output_dir):
 def plot_metric_comparisons(pivot_df, output_dir):
     """Plot individual metric comparisons"""
     for metric in [m for m in all_metrics if m not in ['training loss', 'validation loss']]:
-        fig, ax = plt.subplots(figsize=(3, 1.8))
+        fig, ax = plt.subplots(figsize=(1.5, 1.8))
         
         for run_idx, run_id in enumerate(run_ids):
             run_data = pivot_df[pivot_df['run_id']==run_id].sort_values('step')
@@ -148,7 +148,7 @@ def plot_metric_comparisons(pivot_df, output_dir):
         ax.set_xlabel('Step', labelpad=1)
         
         
-        ax.legend(loc='lower right', fontsize=5)
+        ax.legend(loc='lower right', fontsize=4, handlelength=0.5, handletextpad=0.2)
         
         plt.tight_layout(pad=0.5)
         plt.savefig(os.path.join(output_dir, 'plots', f'{metric}.png'), bbox_inches='tight')
