@@ -87,49 +87,39 @@ def create_comparison_tables(pivot_df, output_dir):
 # =============================================
 
 def plot_loss_comparison(pivot_df, output_dir):
-    """Plot loss comparison across runs"""
+    """Plot individual loss curves for each run (no subplots)"""
     colors = ['#1f77b4', '#ff7f0e']
-    if len(run_ids) > 0:
-        ncols = min(3, len(run_ids))
-        nrows = int(np.ceil(len(run_ids)/ncols))
+    for run_id in run_ids:
+        run_data = pivot_df[pivot_df['run_id'] == run_id].sort_values('step')
         
-        fig, axs = plt.subplots(nrows, ncols, figsize=(4, 1.5*nrows), squeeze=False)
+        fig, ax = plt.subplots(figsize=(1.5, 2))  # Small, readable size
         
-        for idx, run_id in enumerate(run_ids):
-            row = idx // ncols
-            col = idx % ncols
-            ax = axs[row, col]
-            
-            run_data = pivot_df[pivot_df['run_id']==run_id].sort_values('step')
-            
-            ax.plot(run_data['step'], run_data['training loss'], 
-                   color=colors[0], linewidth=0.6, label='Train loss')
-            ax.plot(run_data['step'], run_data['validation loss'], 
-                   color=colors[1], linewidth=0.6, label='Validation loss')
-            
-            y_pad = 0.05*(run_data['training loss'].max() - run_data['training loss'].min())
-            ax.set_ylim([
-                min(run_data['training loss'].min(), run_data['validation loss'].min()) - y_pad,
-                max(run_data['training loss'].max(), run_data['validation loss'].max()) + y_pad
-            ])
-            
-            ax.set_title(run_id, pad=2, fontsize=7)
-            ax.set_xlabel('Step', labelpad=1)
-            ax.set_ylabel('Loss', labelpad=1)
-            ax.legend(loc='upper right', handlelength=0.5, handletextpad=0.2)
-            
-            last = run_data.iloc[-1]
-            ax.plot(last['step'], last['training loss'], 'o', color=colors[0], markersize=2)
-            ax.plot(last['step'], last['validation loss'], 'o', color=colors[1], markersize=2)
+        ax.plot(run_data['step'], run_data['training loss'], 
+                color=colors[0], linewidth=0.6, label='Train loss')
+        ax.plot(run_data['step'], run_data['validation loss'], 
+                color=colors[1], linewidth=0.6, label='Validation loss')
         
-        for idx in range(len(run_ids), nrows*ncols):
-            row = idx // ncols
-            col = idx % ncols
-            axs[row, col].axis('off')
+        # Highlight final points
+        last = run_data.iloc[-1]
+        ax.plot(last['step'], last['training loss'], 'o', color=colors[0], markersize=2)
+        ax.plot(last['step'], last['validation loss'], 'o', color=colors[1], markersize=2)
         
-        plt.tight_layout(pad=0.5)
-        plt.savefig(os.path.join(output_dir, 'plots', 'loss_comparison.png'), bbox_inches='tight')
+        y_pad = 0.05 * (run_data[['training loss', 'validation loss']].max().max() -
+                        run_data[['training loss', 'validation loss']].min().min())
+        ax.set_ylim([
+            run_data[['training loss', 'validation loss']].min().min() - y_pad,
+            run_data[['training loss', 'validation loss']].max().max() + y_pad
+        ])
+    
+        ax.set_xlabel('Step', labelpad=1)
+        ax.set_ylabel('Loss', labelpad=1)
+        ax.legend(loc='upper right', fontsize=4, handlelength=0.5, handletextpad=0.2)
+        
+        plt.tight_layout(pad=0.4)
+        filename = f"loss_{run_id.replace('/', '_')}.png"
+        plt.savefig(os.path.join(output_dir, 'plots', filename), bbox_inches='tight')
         plt.close()
+
 
 def plot_metric_comparisons(pivot_df, output_dir):
     """Plot individual metric comparisons"""
@@ -142,9 +132,7 @@ def plot_metric_comparisons(pivot_df, output_dir):
                    color=colors[run_idx%len(colors)],
                    linewidth=0.5,
                    label=run_id)
-        
-        metric_name = metric.replace('_', ' ').title()
-        ax.set_title(metric_name[:20], pad=2, fontsize=7)
+            
         ax.set_xlabel('Step', labelpad=1)
         
         
