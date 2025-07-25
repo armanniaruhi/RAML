@@ -1,3 +1,20 @@
+# Similarity & Siamese Neural Networks (SNNs)
+
+This project explores how the choice of loss function influences the performance of Siamese Neural Networks (SNNs) in face verification tasks. As part of the seminar *Recent Advances in Machine Learning*, we compared three loss functions:
+
+- **Contrastive Loss** (from the lecture)
+- **Circle Loss**
+- **Multi-Similarity Loss**
+
+The models were trained using a ResNet-18-based Siamese architecture and evaluated on the **AT&T**, **CelebA**, and **VGGFace** datasets. Metrics such as AUROC, F1-Score, and Fisher Score were used to assess performance. Results showed that **Multi-Similarity Loss** consistently delivered the best results, especially on complex datasets.
+
+**Team Members:**
+- Haitham El Euch  
+- Soroor Eskandari  
+- Arman Niaruhi
+
+---
+
 # Setting Up the Conda Environment
 
 To set up the required Conda environment, follow these steps:
