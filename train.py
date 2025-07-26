@@ -1,32 +1,50 @@
 """
-Refactored and modularized training script for Siamese Network with cross-validation,
+Refactored and modularized a training script for Siamese Network with cross-validation,
 MLflow logging, and optional pretrained loading.
 """
 import os
 import random
 import warnings
 import yaml
+import logging
 
 import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import colorcet as cc 
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 from sklearn.model_selection import KFold
+
 import pytorch_metric_learning.losses as losses
 import mlflow
 from colorama import Fore, Style, init
 from tqdm.auto import tqdm
-import matplotlib.pyplot as plt
 
 from src.ml.resNet18 import SiameseNetworkCosine, SiameseNetworkContrastive
 from src.preprocessing.dataLoader_Siamase import SiameseNetworkDataset
 from src.ml.contrastive_loss import ContrastiveLoss
 
 
+# Initialize colorama
+init(autoreset=True)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s — %(levelname)s — %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+
+logger = logging.getLogger(__name__)
+
 def set_seed(seed: int = 42) -> None:
     """Set all random seeds for reproducibility."""
+    logger.info(Fore.CYAN + f"Setting random seed: {seed}" + Style.RESET_ALL)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -37,6 +55,7 @@ def set_seed(seed: int = 42) -> None:
 
 def load_config(path: str = 'config.yml') -> dict:
     """Load training configuration from YAML file."""
+    logger.info(Fore.CYAN + f"Loading config from {path}..." + Style.RESET_ALL)
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
@@ -80,7 +99,8 @@ def build_model_and_loss(loss_type: str, device: torch.device):
 
 def train_fold(model, criterion, optimizer, train_loader, val_loader,
                device, loss_type, patience):
-    """Train and validate for one fold. Returns metrics dict and best model state."""
+    """Train and validate for one fold. Returns metrics dict and the best model state."""
+    global avg_loss
     best_val_loss = np.inf
     epochs_no_improve = 0
     metrics = {'train_loss': [], 'val_loss': [], 'accuracy': [], 'precision': [], 'recall': [], 'f1': []}
@@ -183,13 +203,14 @@ def train_fold(model, criterion, optimizer, train_loader, val_loader,
 def train_validate(dataset, config, device):
     """Run K-Fold cross-validation and return summary metrics and best model state."""
     k_folds = config.get('k_folds', 5)
+    logger.info(Fore.MAGENTA + f"Starting {k_folds}-fold cross-validation" + Style.RESET_ALL)
     kfold = KFold(n_splits=k_folds, shuffle=True)
     all_results = []
     best_overall_f1 = -1
     best_state = None
 
     for fold, (train_idx, val_idx) in enumerate(kfold.split(dataset)):
-        print(f"\n--- Fold {fold+1}/{k_folds} ---")
+        logger.info(Fore.YELLOW + f"\n--- Fold {fold+1}/{k_folds} ---" + Style.RESET_ALL)
         train_loader = DataLoader(Subset(dataset, train_idx), batch_size=config['BATCHSIZE'], shuffle=True)
         val_loader = DataLoader(Subset(dataset, val_idx), batch_size=config['BATCHSIZE'], shuffle=False)
 
@@ -214,7 +235,7 @@ def train_validate(dataset, config, device):
                 torch.save(state, f"models_{config['LOSS_TYPE']}/best_overall.pt")
 
     avg_f1 = np.mean([max(m['f1']) for m in all_results])
-    print(f"\nAverage best F1 across folds: {avg_f1:.4f}")
+    logger.info(Fore.MAGENTA + f"\nAverage best F1 across folds: {avg_f1:.4f}" + Style.RESET_ALL)
     return all_results, best_state
 
 
@@ -232,7 +253,7 @@ def plot_samples_with_metrics(dataset, model, device, n_samples=8, n_cols=4):
         pairs.append((img0.cpu(), img1.cpu(), l0.item(), l1.item(), euclid, cos_sim))
 
     n_rows = (n_samples + n_cols - 1) // n_cols
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 4*n_rows))
+    _, axs = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 4*n_rows))
     axs = axs.flatten() if n_samples>1 else [axs]
     for i, ax in enumerate(axs):
         if i < len(pairs):
@@ -247,28 +268,137 @@ def plot_samples_with_metrics(dataset, model, device, n_samples=8, n_cols=4):
     plt.show()
 
 
-def main():
-    global config
-    config = load_config()
-    device = get_device()
-    set_seed(config.get('SEED', 42))
-    warnings.filterwarnings('ignore', category=UserWarning)
-    init()  # colorama
+from sklearn.manifold import TSNE
 
+def get_tsne_embeddings(dataset, model, device):
+    """Helper function to extract embeddings for t-SNE visualization."""
+    model.eval()
+    embeddings = []
+    labels = []
+
+    loader = DataLoader(dataset, batch_size=1, shuffle=True)
+    with torch.no_grad():
+        for i, (img0, img1, _, l0, l1) in enumerate(loader):
+            img0 = img0.to(device)
+            emb0, _ = model(img0, img0)
+            embeddings.append(emb0.squeeze().cpu().numpy())
+            labels.append(l0.item())
+
+    return np.array(embeddings), labels
+
+
+def plot_tsne(embeddings, labels, save_path):
+    """Plot t-SNE visualization of embeddings with distinct colors for each label."""
+    logger.info(Fore.CYAN + "Preparing t-SNE plot..." + Style.RESET_ALL)
+    labels = np.array(labels)
+    unique_labels = np.unique(labels)
+    n_classes = len(unique_labels)
+
+    # Distinct color mapping
+    all_colors = cc.glasbey[:n_classes]
+    color_dict = {label: all_colors[i] for i, label in enumerate(unique_labels)}
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for label in unique_labels:
+        mask = labels == label
+        ax.scatter(embeddings[mask, 0], embeddings[mask, 1], s=10, color=color_dict[label])
+
+    ax.set_xlabel("t-SNE 1")
+    ax.set_ylabel("t-SNE 2")
+    ax.tick_params(labelleft=True)
+
+    logger.info(Fore.CYAN + f"Saving t-SNE plot to: {save_path}" + Style.RESET_ALL)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, dpi=300)
+    plt.show()
+    plt.close()
+    logger.info(Fore.GREEN + "t-SNE plot saved and closed." + Style.RESET_ALL)
+
+
+def plot_tsne_before_after_separately(embeddings_before, labels_before, embeddings_after, labels_after, loss_type):
+    """Plot t-SNE for embeddings before and after training, separately."""
+    logger.info(Fore.CYAN + "Preparing t-SNE plots for before and after training..." + Style.RESET_ALL)
+    all_embeddings = np.concatenate([embeddings_before, embeddings_after])
+    if loss_type == "contrastive":
+        metric = "euclidean"
+        preplexity = max(50, len(all_embeddings) // 2)
+    else:
+        metric = "cosine"
+        preplexity = min(30, len(all_embeddings) // 2)
+    tsne = TSNE(n_components=2, perplexity=preplexity,
+                n_iter=500, random_state=42, metric=metric)
+    all_embeddings_2d = tsne.fit_transform(all_embeddings)
+
+    n_before = len(embeddings_before)
+    emb_before_2d = all_embeddings_2d[:n_before]
+    emb_after_2d = all_embeddings_2d[n_before:]
+
+    plot_tsne(emb_before_2d, labels_before, f"results/plots/tsne_plots/tsne_before_{loss_type}.png")
+    plot_tsne(emb_after_2d, labels_after, f"results/plots/tsne_plots/tsne_after_{loss_type}.png")
+
+
+# Main function to run the training pipeline
+def main():
+    # Initialize global config and suppress warnings
+    global config
+    # Suppress UserWarnings from PyTorch
+    warnings.filterwarnings('ignore', category=UserWarning)
+    # Suppress Matplotlib warnings
+    mlflow.set_experiment("SiameseTraining")
+    logger.info(Fore.MAGENTA + "===== Starting Siamese Training Pipeline =====" + Style.RESET_ALL)
+    # Load configuration and set up environment
+    config = load_config()
+    # Set up device and random seed
+    device = get_device()
+    #  Set random seed for reproducibility
+    set_seed(config.get('SEED', 42))
+    # Create necessary directories
+    init()
+    
+    logger.info(Fore.BLUE + "Plotting t-SNE BEFORE training..." + Style.RESET_ALL)
+
+    # Prepare dataset and transformations
     dataset = prepare_dataset(root='dataset/train', transform=create_transform())
+    # Prepare t-SNE dataset
+    tsne_dataset = prepare_dataset(root='dataset/tsne_dataset', transform=create_transform())
+
+    # Build model and loss function
+    model_before, _ = build_model_and_loss(config['LOSS_TYPE'], device)
+    logger.info(Fore.BLUE + f"Loss type: {config['LOSS_TYPE']}" + Style.RESET_ALL)
+    # Get embeddings for t-SNE before training
+    emb_before, lbl_before = get_tsne_embeddings(tsne_dataset, model_before, device)
+    
+    # Set loss type for logging
+    loss_type = "ms" if config['LOSS_TYPE'] == 'MultiSimilarity' else config['LOSS_TYPE'].lower()
 
     if not config['PRETRAINED']:
+        # Start training and validation
+        logger.info(Fore.YELLOW + "Starting training and validation..." + Style.RESET_ALL)
+        mlflow.log_params(config)
+        # Train and validate using K-Fold cross-validation
         train_validate(dataset, config, device)
-        print("Training complete. Best model saved.")
+        print(Fore.GREEN + "Plotting t-SNE AFTER training..." + Style.RESET_ALL)
+        # Get embeddings for t-SNE after training
+        model_after, _ = build_model_and_loss(config['LOSS_TYPE'], device)
+        # Load the best model state
+        model_after.load_state_dict(torch.load(f"models/models_{loss_type}/best_model_overall.pt", map_location=device))
+        # Get embeddings for t-SNE after training
+        emb_after, lbl_after = get_tsne_embeddings(tsne_dataset, model_after, device)
     else:
-        print(Fore.YELLOW + "Loading pretrained model..." + Style.RESET_ALL)
+        # Load pretrained model
+        logger.info(Fore.YELLOW + "Loading pretrained model..." + Style.RESET_ALL)
+        # Load the pretrained model state
         model, _ = build_model_and_loss(config['LOSS_TYPE'], device)
-        if config['LOSS_TYPE'] == 'MultiSimilarity':
-            loss_type = "ms"
-        else:
-            loss_type = config['LOSS_TYPE']
-        model.load_state_dict(torch.load(f"models/models_{loss_type.lower()}/best_model_overall.pt", map_location=device))
-        plot_samples_with_metrics(dataset, model, device)
+        # Load the best model state
+        model.load_state_dict(torch.load(f"models/models_{loss_type}/best_model_overall.pt", map_location=device, weights_only=True))
+        # Get embeddings for t-SNE after loading pretrained model
+        logger.info(Fore.BLUE + "Plotting t-SNE AFTER loading pretrained model..." + Style.RESET_ALL)
+        emb_after, lbl_after = get_tsne_embeddings(tsne_dataset, model, device)
 
+    plot_tsne_before_after_separately(emb_before, lbl_before, emb_after, lbl_after, loss_type)
+    logger.info(Fore.MAGENTA + "===== Training Pipeline Completed =====" + Style.RESET_ALL)
+    
 if __name__ == '__main__':
     main()

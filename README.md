@@ -66,7 +66,7 @@ This project investigates how different loss functions impact the performance of
 ### 1. Download the Dataset
 
 Download the dataset from the following link:  
-[Dataset (Google Drive)](https://drive.google.com/file/d/1oLIfYo21w744liIEN9EZi5i4Ej4shDQX/view?usp=share_link)
+[Dataset (Google Drive)](https://drive.google.com/file/d/1l6xXrNVAUduUy4zl0eI0PSDIsQ7NZEpV/view?usp=sharing)
 
 Place the extracted `dataset` folder in the root directory of the project.
 
@@ -76,6 +76,12 @@ Download pretrained models from:
 [Models (Google Drive)](https://drive.google.com/file/d/1ewfgJhApXS-5rkD-_ZjzqGMBO7dV6C6o/view?usp=sharing)
 
 Place the `models` folder in the root directory of the project.
+
+### 3. Download the Our Results and Plots
+
+Download some of the results of training:  
+[Models (Google Drive)](https://drive.google.com/file/d/1i0wf_JKcBktsVZB9VTLlogVZivQkbrwy/view?usp=sharing)
+
 
 ### 3. Install Conda
 
