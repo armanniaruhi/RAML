@@ -10,6 +10,8 @@ import logging
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 from sklearn.manifold import TSNE
 import colorcet as cc 
 
@@ -327,8 +329,7 @@ def plot_tsne_before_after_separately(embeddings_before, labels_before, embeddin
     else:
         metric = "cosine"
         preplexity = min(30, len(all_embeddings) // 2)
-    tsne = TSNE(n_components=2, perplexity=preplexity,
-                n_iter=500, random_state=42, metric=metric)
+    tsne = TSNE(n_components=2, perplexity=preplexity, random_state=42, metric=metric)
     all_embeddings_2d = tsne.fit_transform(all_embeddings)
 
     n_before = len(embeddings_before)

@@ -88,7 +88,7 @@ Download some of the results of training and test:
 create the venv
 
 ```bash
-python -m venv raml_venv 
+python -m venv raml2025 
 ```
 
 In the terminal, activate our virtual environment to avoid extra package installation:
