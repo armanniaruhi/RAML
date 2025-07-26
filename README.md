@@ -83,16 +83,28 @@ Download some of the results of training and test:
 [Results (Google Drive)](https://drive.google.com/drive/folders/1t-HY0COdvQUTeS2G0BSizCZ-o0rfJAWe?usp=sharing)
 
 
-### 3. Install Conda
+### 4. Create the Virtual Environment and Activate it
 
-If Conda is not installed, follow the [official Conda installation guide](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) to install it.
-
-### 4. Create the Conda Environment
-
-In the terminal, navigate to the directory containing the `environment.yml` file and run:
+create the venv
 
 ```bash
-conda env create -f environment.yml
+python -m venv raml_venv 
+```
+
+In the terminal, activate our virtual environment to avoid extra package installation:
+
+In linux/mac os:
+```bash
+source raml2025/bin/activate
+pip install -r requirements.txt
+
+```
+
+In Windows:
+```bash
+raml2025\bin\activate
+pip install -r requirements.txt
+
 ```
 
 

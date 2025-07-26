@@ -3,6 +3,7 @@
 #*.pth
 *.db
 *.html
+/raml2025/
 
 # Ignored directories
 /dataset/

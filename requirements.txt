@@ -1,0 +1,13 @@
+numpy
+matplotlib
+scikit-learn
+torch
+torchvision
+torchaudio
+colorcet
+tqdm
+colorama
+pyyaml
+pytorch-metric-learning
+mlflow
+packaging<25
