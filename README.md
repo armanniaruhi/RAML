@@ -77,10 +77,10 @@ Download pretrained models from:
 
 Place the `models` folder in the root directory of the project.
 
-### 3. Download the Our Results and Plots
+### 3. Download our Results and Plots
 
 Download some of the results of training and test:  
-[Models (Google Drive)](https://drive.google.com/drive/folders/1t-HY0COdvQUTeS2G0BSizCZ-o0rfJAWe?usp=sharing)
+[Results (Google Drive)](https://drive.google.com/drive/folders/1t-HY0COdvQUTeS2G0BSizCZ-o0rfJAWe?usp=sharing)
 
 
 ### 3. Install Conda
