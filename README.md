@@ -73,7 +73,7 @@ Place the extracted `dataset` folder in the root directory of the project.
 ### 2. Download the Pretrained Models
 
 Download pretrained models from:  
-[Models (Google Drive)](https://drive.google.com/file/d/1ewfgJhApXS-5rkD-_ZjzqGMBO7dV6C6o/view?usp=sharing)
+[Models (Google Drive)](https://drive.google.com/file/d/1iXWGV09esjQExlD_GccUHg6Og7wCnjo0/view?usp=sharing)
 
 Place the `models` folder in the root directory of the project.
 
